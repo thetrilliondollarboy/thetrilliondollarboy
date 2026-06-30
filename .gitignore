@@ -1,0 +1,9 @@
+# MetaTrader 5 kompilyatsiya natijalari
+*.ex5
+*.ex4
+
+# MetaEditor / OS vaqtinchalik fayllari
+*.log
+*.tmp
+.DS_Store
+Thumbs.db
