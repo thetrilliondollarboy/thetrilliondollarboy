@@ -19,10 +19,6 @@ enum ENUM_MARKET_TYPE
 #define SESS_NEWYORK      2
 #define SESS_LONDONCLOSE  3
 
-//--- Wingdings arrow codes (OBJPROP_ARROWCODE uchun) ----------------------
-#define ARROW_CODE_UP     233 // yuqoriga strelka
-#define ARROW_CODE_DOWN   234 // pastga strelka
-
 //--- inputs ---------------------------------------------------------------
 input group "== Bozor turi =="
 input ENUM_MARKET_TYPE InpMarketType = MARKET_FOREX; // Bozor turi (Forex / Indices) - Kill Zone vaqtlari shunga qarab tanlanadi
@@ -38,14 +34,15 @@ input bool InpShowNewYork     = false; // New York Kill Zone
 input bool InpShowLondonClose = false; // London Close Kill Zone
 
 input group "== Ko'rinish =="
-input color InpAsianColor       = clrDodgerBlue;   // Asian rangi
-input color InpLondonColor      = clrOrange;       // London rangi
-input color InpNewYorkColor     = clrLimeGreen;    // New York rangi
-input color InpLondonCloseColor = clrViolet;       // London Close rangi
-input bool  InpShowLabels       = true;             // Sessiya nomini chizish
-input bool  InpShowHighLowArrow = true;             // Maksimum/minimum nuqtalarni strelka bilan belgilash
-input color InpHighColor        = clrRed;           // Maksimum nuqta rangi
-input color InpLowColor         = clrBlue;          // Minimum nuqta rangi
+input color InpAsianColor       = C'70,100,190';   // Asian chiziq/ramka rangi
+input color InpLondonColor      = clrOrange;       // London chiziq/ramka rangi
+input color InpNewYorkColor     = clrLimeGreen;    // New York chiziq/ramka rangi
+input color InpLondonCloseColor = clrViolet;       // London Close chiziq/ramka rangi
+input color InpBoxFillColor     = C'225,228,245';  // To'rtburchak fon (ichki) rangi
+input int   InpLineWidth        = 2;               // HIGH/LOW chiziq qalinligi
+input bool  InpShowLabels       = true;            // HIGH / LOW yozuvlarini chizish
+input color InpLabelColor       = clrBlack;        // Yozuv (HIGH/LOW) rangi
+input int   InpLabelFontSize    = 9;               // Yozuv shrift o'lchami
 
 input group "== Tarix =="
 input int InpHistoryDays = 5; // Nechta kunlik tarixni chizish
@@ -58,7 +55,7 @@ input bool   InpEnablePopupAlert = true;       // Sessiya tugaganda ekranda xaba
 input group "== Maksimum/Minimum buzilishi alerti =="
 input bool   InpEnableBreakoutAlert = true;         // Sessiya tugagach max/min nuqta narx bilan buzilsa alert berilsin
 input string InpBreakoutSoundFile   = "alert2.wav"; // Buzilish uchun alohida ovoz fayli
-input bool   InpShowWatchLines      = true;         // Kutilayotgan max/min chiziqlarini chizish
+input bool   InpShowLevelLines      = true;         // HIGH/LOW darajalarini chiziq bilan ko'rsatish
 
 input group "== Telegram Alert =="
 input bool   InpEnableTelegram   = false; // Telegram orqali xabar yuborilsin
@@ -73,7 +70,7 @@ int    g_endMin[SESSION_COUNT];
 bool   g_enabled[SESSION_COUNT];
 color  g_color[SESSION_COUNT];
 string g_key[SESSION_COUNT]   = {"Asian","London","NewYork","LondonClose"};
-string g_label[SESSION_COUNT] = {"Asian KZ","London KZ","New York KZ","London Close KZ"};
+string g_label[SESSION_COUNT] = {"ASIA","LONDON","NEW YORK","LONDON CLOSE"};
 
 //--- running state per session ---------------------------------------------
 bool     g_active[SESSION_COUNT];
@@ -235,7 +232,7 @@ void DrawSessionBox(const int idx,const datetime rightTime)
    if(ObjectFind(0,name)<0)
    {
       ObjectCreate(0,name,OBJ_RECTANGLE,0,g_startTime[idx],g_high[idx],t2,g_low[idx]);
-      ObjectSetInteger(0,name,OBJPROP_COLOR,g_color[idx]);
+      ObjectSetInteger(0,name,OBJPROP_COLOR,InpBoxFillColor);
       ObjectSetInteger(0,name,OBJPROP_STYLE,STYLE_SOLID);
       ObjectSetInteger(0,name,OBJPROP_WIDTH,1);
       ObjectSetInteger(0,name,OBJPROP_FILL,true);
@@ -252,82 +249,66 @@ void DrawSessionBox(const int idx,const datetime rightTime)
    }
 }
 
-void SetArrow(const string name,const datetime t,const double price,const int code,const color clr,const bool anchorTop)
+//+------------------------------------------------------------------+
+//| HIGH yoki LOW darajasi: chiziq (to'rtburchak boshidan o'ngga) +   |
+//| ustiga "ASIA HIGH" / "ASIA LOW" ko'rinishidagi yozuv              |
+//| lineRight - chiziq o'ng cheti; wasBroken - shu bardan oldin       |
+//| buzilgan bo'lsa chiziq cho'zilmaydi (buzilgan joyda uziladi)      |
+//+------------------------------------------------------------------+
+void DrawLevel(const int idx,const bool isHigh,const double price,
+               const datetime lineRight,const bool wasBroken)
 {
-   if(ObjectFind(0,name)<0)
+   string base="ICTKZ_"+g_key[idx]+"_"+MakeId(g_startTime[idx])+(isHigh?"_hi":"_lo");
+   string lname=base+"_ln";
+   string tname=base+"_tx";
+   datetime t1=g_startTime[idx];
+   datetime t2=lineRight+PeriodSeconds();
+   datetime labelT=g_lastInTime[idx]+PeriodSeconds(); // yozuv to'rtburchakning o'ng chetida turadi
+
+   //--- chiziq ---
+   if(InpShowLevelLines)
    {
-      ObjectCreate(0,name,OBJ_ARROW,0,t,price);
-      ObjectSetInteger(0,name,OBJPROP_ARROWCODE,code);
-      ObjectSetInteger(0,name,OBJPROP_COLOR,clr);
-      ObjectSetInteger(0,name,OBJPROP_WIDTH,2);
-      ObjectSetInteger(0,name,OBJPROP_SELECTABLE,false);
-      ObjectSetInteger(0,name,OBJPROP_HIDDEN,true);
-      ObjectSetInteger(0,name,OBJPROP_ANCHOR,anchorTop?ANCHOR_BOTTOM:ANCHOR_TOP);
+      if(ObjectFind(0,lname)<0)
+      {
+         ObjectCreate(0,lname,OBJ_TREND,0,t1,price,t2,price);
+         ObjectSetInteger(0,lname,OBJPROP_COLOR,g_color[idx]);
+         ObjectSetInteger(0,lname,OBJPROP_STYLE,STYLE_SOLID);
+         ObjectSetInteger(0,lname,OBJPROP_WIDTH,InpLineWidth);
+         ObjectSetInteger(0,lname,OBJPROP_RAY_LEFT,false);
+         ObjectSetInteger(0,lname,OBJPROP_RAY_RIGHT,false);
+         ObjectSetInteger(0,lname,OBJPROP_SELECTABLE,false);
+         ObjectSetInteger(0,lname,OBJPROP_HIDDEN,true);
+         ObjectSetInteger(0,lname,OBJPROP_BACK,false);
+      }
+      else if(!wasBroken)
+      {
+         ObjectSetInteger(0,lname,OBJPROP_TIME,0,t1);
+         ObjectSetDouble (0,lname,OBJPROP_PRICE,0,price);
+         ObjectSetInteger(0,lname,OBJPROP_TIME,1,t2);
+         ObjectSetDouble (0,lname,OBJPROP_PRICE,1,price);
+      }
    }
-   else
+
+   //--- yozuv (ASIA HIGH / ASIA LOW) ---
+   if(InpShowLabels)
    {
-      ObjectSetInteger(0,name,OBJPROP_TIME,0,t);
-      ObjectSetDouble (0,name,OBJPROP_PRICE,0,price);
-   }
-}
-
-void DrawSessionMarkers(const int idx)
-{
-   if(!InpShowHighLowArrow) return;
-   string hname="ICTKZ_"+g_key[idx]+"_"+MakeId(g_startTime[idx])+"_high";
-   string lname="ICTKZ_"+g_key[idx]+"_"+MakeId(g_startTime[idx])+"_low";
-   SetArrow(hname,g_highTime[idx],g_high[idx],ARROW_CODE_DOWN,InpHighColor,true);
-   SetArrow(lname,g_lowTime[idx],g_low[idx],ARROW_CODE_UP,InpLowColor,false);
-}
-
-void DrawWatchLine(const int idx,const bool isHigh,const datetime currentTime)
-{
-   if(!InpShowWatchLines) return;
-
-   bool broken=isHigh?g_highBroken[idx]:g_lowBroken[idx];
-   if(broken) return; // buzilgan chiziq shu yerda to'xtab qoladi, davom cho'zilmaydi
-
-   double price=isHigh?g_watchHigh[idx]:g_watchLow[idx];
-   string name="ICTKZ_"+g_key[idx]+"_"+MakeId(g_startTime[idx])+(isHigh?"_wh":"_wl");
-   datetime t1=g_lastInTime[idx]+PeriodSeconds();
-   datetime t2=currentTime+PeriodSeconds();
-
-   if(ObjectFind(0,name)<0)
-   {
-      ObjectCreate(0,name,OBJ_TREND,0,t1,price,t2,price);
-      ObjectSetInteger(0,name,OBJPROP_COLOR,g_color[idx]);
-      ObjectSetInteger(0,name,OBJPROP_STYLE,STYLE_SOLID);
-      ObjectSetInteger(0,name,OBJPROP_WIDTH,1);
-      ObjectSetInteger(0,name,OBJPROP_RAY_LEFT,false);
-      ObjectSetInteger(0,name,OBJPROP_RAY_RIGHT,false);
-      ObjectSetInteger(0,name,OBJPROP_SELECTABLE,false);
-      ObjectSetInteger(0,name,OBJPROP_HIDDEN,true);
-      ObjectSetInteger(0,name,OBJPROP_BACK,true);
-   }
-   else
-   {
-      ObjectSetInteger(0,name,OBJPROP_TIME,1,t2);
-   }
-}
-
-void DrawSessionLabel(const int idx)
-{
-   if(!InpShowLabels) return;
-   string name="ICTKZ_"+g_key[idx]+"_"+MakeId(g_startTime[idx])+"_lbl";
-   if(ObjectFind(0,name)<0)
-   {
-      ObjectCreate(0,name,OBJ_TEXT,0,g_startTime[idx],g_high[idx]);
-      ObjectSetString (0,name,OBJPROP_TEXT,g_label[idx]);
-      ObjectSetInteger(0,name,OBJPROP_COLOR,g_color[idx]);
-      ObjectSetInteger(0,name,OBJPROP_FONTSIZE,8);
-      ObjectSetInteger(0,name,OBJPROP_ANCHOR,ANCHOR_LEFT_LOWER);
-      ObjectSetInteger(0,name,OBJPROP_SELECTABLE,false);
-      ObjectSetInteger(0,name,OBJPROP_HIDDEN,true);
-   }
-   else
-   {
-      ObjectSetInteger(0,name,OBJPROP_TIME,0,g_startTime[idx]);
-      ObjectSetDouble (0,name,OBJPROP_PRICE,0,g_high[idx]);
+      string txt=g_label[idx]+(isHigh?" HIGH":" LOW");
+      if(ObjectFind(0,tname)<0)
+      {
+         ObjectCreate(0,tname,OBJ_TEXT,0,labelT,price);
+         ObjectSetString (0,tname,OBJPROP_TEXT,txt);
+         ObjectSetString (0,tname,OBJPROP_FONT,"Arial Black");
+         ObjectSetInteger(0,tname,OBJPROP_FONTSIZE,InpLabelFontSize);
+         ObjectSetInteger(0,tname,OBJPROP_COLOR,InpLabelColor);
+         ObjectSetInteger(0,tname,OBJPROP_ANCHOR,ANCHOR_RIGHT);
+         ObjectSetInteger(0,tname,OBJPROP_SELECTABLE,false);
+         ObjectSetInteger(0,tname,OBJPROP_HIDDEN,true);
+      }
+      else if(!wasBroken)
+      {
+         ObjectSetInteger(0,tname,OBJPROP_TIME,0,labelT);
+         ObjectSetDouble (0,tname,OBJPROP_PRICE,0,price);
+      }
    }
 }
 
@@ -454,9 +435,10 @@ void ProcessSession(const int idx,const int scanStart,const int ratesTotal,
          }
          g_lastInTime[idx]=time[i];
 
+         // sessiya davomida: to'rtburchak + HIGH/LOW chiziq va yozuvlar
          DrawSessionBox(idx,g_lastInTime[idx]);
-         DrawSessionMarkers(idx);
-         DrawSessionLabel(idx);
+         DrawLevel(idx,true,g_high[idx],g_lastInTime[idx],false);
+         DrawLevel(idx,false,g_low[idx],g_lastInTime[idx],false);
       }
       else
       {
@@ -477,8 +459,9 @@ void ProcessSession(const int idx,const int scanStart,const int ratesTotal,
 
       if(g_watching[idx])
       {
-         DrawWatchLine(idx,true,time[i]);
-         DrawWatchLine(idx,false,time[i]);
+         // shu bardan oldingi buzilish holati (chiziqni buzilgan joyda uzish uchun)
+         bool hiWasBroken=g_highBroken[idx];
+         bool loWasBroken=g_lowBroken[idx];
 
          if(!g_highBroken[idx] && high[i]>g_watchHigh[idx])
          {
@@ -492,6 +475,10 @@ void ProcessSession(const int idx,const int scanStart,const int ratesTotal,
             if(allowAlerts)
                FireBreakoutAlert(idx,false,time[i],low[i]);
          }
+
+         // chiziq buzilmaguncha o'ngga cho'ziladi, buzilgan barda to'xtaydi
+         DrawLevel(idx,true,g_watchHigh[idx],time[i],hiWasBroken);
+         DrawLevel(idx,false,g_watchLow[idx],time[i],loWasBroken);
       }
    }
 }
