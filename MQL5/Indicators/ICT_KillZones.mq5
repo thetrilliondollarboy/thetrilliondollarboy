@@ -51,6 +51,11 @@ input bool   InpEnableSoundAlert = true;       // Sessiya tugaganda ovozli signa
 input string InpSoundFile        = "alert.wav"; // Ovoz fayli (terminal Sounds papkasidagi)
 input bool   InpEnablePopupAlert = true;       // Sessiya tugaganda ekranda xabar (Alert) chiqsin
 
+input group "== Maksimum/Minimum buzilishi alerti =="
+input bool   InpEnableBreakoutAlert = true;         // Sessiya tugagach max/min nuqta narx bilan buzilsa alert berilsin
+input string InpBreakoutSoundFile   = "alert2.wav"; // Buzilish uchun alohida ovoz fayli
+input bool   InpShowWatchLines      = true;         // Kutilayotgan max/min chiziqlarini chizish
+
 input group "== Telegram Alert =="
 input bool   InpEnableTelegram   = false; // Telegram orqali xabar yuborilsin
 input string InpTelegramBotToken = "";    // Telegram Bot Token (@BotFather dan olinadi)
@@ -74,6 +79,13 @@ double   g_high[SESSION_COUNT];
 double   g_low[SESSION_COUNT];
 datetime g_highTime[SESSION_COUNT];
 datetime g_lowTime[SESSION_COUNT];
+
+//--- max/min breakout watch state (active after a session closes) ----------
+bool     g_watching[SESSION_COUNT];
+double   g_watchHigh[SESSION_COUNT];
+double   g_watchLow[SESSION_COUNT];
+bool     g_highBroken[SESSION_COUNT];
+bool     g_lowBroken[SESSION_COUNT];
 
 //+------------------------------------------------------------------+
 int OnInit()
@@ -104,7 +116,12 @@ int OnInit()
    g_color[SESS_LONDONCLOSE] = InpLondonCloseColor;
 
    for(int i=0;i<SESSION_COUNT;i++)
+   {
       g_active[i]=false;
+      g_watching[i]=false;
+      g_highBroken[i]=false;
+      g_lowBroken[i]=false;
+   }
 
    ObjectsDeleteAll(0,"ICTKZ_");
    return(INIT_SUCCEEDED);
@@ -259,6 +276,43 @@ void DrawSessionMarkers(const int idx)
    SetArrow(lname,g_lowTime[idx],g_low[idx],SYMBOL_ARROWUP,InpLowColor,false);
 }
 
+void DrawWatchLine(const int idx,const bool isHigh,const datetime currentTime)
+{
+   if(!InpShowWatchLines) return;
+
+   bool broken=isHigh?g_highBroken[idx]:g_lowBroken[idx];
+   double price=isHigh?g_watchHigh[idx]:g_watchLow[idx];
+   string name="ICTKZ_"+g_key[idx]+"_"+MakeId(g_startTime[idx])+(isHigh?"_wh":"_wl");
+   datetime t1=g_lastInTime[idx]+PeriodSeconds();
+   datetime t2=currentTime+PeriodSeconds();
+
+   if(ObjectFind(0,name)<0)
+   {
+      ObjectCreate(0,name,OBJ_TREND,0,t1,price,t2,price);
+      ObjectSetInteger(0,name,OBJPROP_COLOR,g_color[idx]);
+      ObjectSetInteger(0,name,OBJPROP_STYLE,STYLE_DOT);
+      ObjectSetInteger(0,name,OBJPROP_WIDTH,1);
+      ObjectSetInteger(0,name,OBJPROP_RAY_LEFT,false);
+      ObjectSetInteger(0,name,OBJPROP_RAY_RIGHT,false);
+      ObjectSetInteger(0,name,OBJPROP_SELECTABLE,false);
+      ObjectSetInteger(0,name,OBJPROP_HIDDEN,true);
+      ObjectSetInteger(0,name,OBJPROP_BACK,true);
+   }
+   else if(!broken)
+   {
+      ObjectSetInteger(0,name,OBJPROP_TIME,1,t2);
+   }
+}
+
+void FreezeWatchLine(const int idx,const bool isHigh)
+{
+   if(!InpShowWatchLines) return;
+   string name="ICTKZ_"+g_key[idx]+"_"+MakeId(g_startTime[idx])+(isHigh?"_wh":"_wl");
+   ObjectSetInteger(0,name,OBJPROP_STYLE,STYLE_SOLID);
+   ObjectSetInteger(0,name,OBJPROP_WIDTH,2);
+   ObjectSetInteger(0,name,OBJPROP_COLOR,isHigh?InpHighColor:InpLowColor);
+}
+
 void DrawSessionLabel(const int idx)
 {
    if(!InpShowLabels) return;
@@ -350,6 +404,28 @@ void FireSessionAlert(const int idx)
       SendTelegramMessage(text);
 }
 
+void FireBreakoutAlert(const int idx,const bool isHigh,const datetime t,const double price)
+{
+   if(!InpEnableBreakoutAlert) return;
+
+   string what=isHigh?"MAKSIMUM (yuqori) nuqta buzildi":"MINIMUM (quyi) nuqta buzildi";
+   string text=StringFormat(
+      "%s [%s]\n%s\n%s\nNarx: %s   Vaqt: %s",
+      _Symbol,
+      EnumToString((ENUM_TIMEFRAMES)Period()),
+      g_label[idx],
+      what,
+      DoubleToString(price,_Digits),TimeToString(t,TIME_DATE|TIME_MINUTES)
+   );
+
+   if(InpEnableSoundAlert)
+      PlaySound(InpBreakoutSoundFile);
+   if(InpEnablePopupAlert)
+      Alert(text);
+   if(InpEnableTelegram)
+      SendTelegramMessage(text);
+}
+
 //+------------------------------------------------------------------+
 void ProcessSession(const int idx,const int scanStart,const int ratesTotal,
                      const datetime &time[],const double &high[],const double &low[],
@@ -366,6 +442,7 @@ void ProcessSession(const int idx,const int scanStart,const int ratesTotal,
       {
          if(!g_active[idx])
          {
+            g_watching[idx]=false; // yangi sessiya boshlandi - eski buzilish kuzatuvi to'xtaydi
             g_active[idx]=true;
             g_startTime[idx]=time[i];
             g_high[idx]=high[i];
@@ -391,6 +468,34 @@ void ProcessSession(const int idx,const int scanStart,const int ratesTotal,
             g_active[idx]=false;
             if(allowAlerts)
                FireSessionAlert(idx);
+
+            // sessiya tugadi - endi max/min nuqtalar narx bilan buzilishini kuzatamiz
+            g_watching[idx]=true;
+            g_watchHigh[idx]=g_high[idx];
+            g_watchLow[idx]=g_low[idx];
+            g_highBroken[idx]=false;
+            g_lowBroken[idx]=false;
+         }
+      }
+
+      if(g_watching[idx])
+      {
+         DrawWatchLine(idx,true,time[i]);
+         DrawWatchLine(idx,false,time[i]);
+
+         if(!g_highBroken[idx] && high[i]>g_watchHigh[idx])
+         {
+            g_highBroken[idx]=true;
+            FreezeWatchLine(idx,true);
+            if(allowAlerts)
+               FireBreakoutAlert(idx,true,time[i],high[i]);
+         }
+         if(!g_lowBroken[idx] && low[i]<g_watchLow[idx])
+         {
+            g_lowBroken[idx]=true;
+            FreezeWatchLine(idx,false);
+            if(allowAlerts)
+               FireBreakoutAlert(idx,false,time[i],low[i]);
          }
       }
    }
@@ -414,7 +519,12 @@ int OnCalculate(const int rates_total,
    if(prev_calculated<=0)
    {
       for(int i=0;i<SESSION_COUNT;i++)
+      {
          g_active[i]=false;
+         g_watching[i]=false;
+         g_highBroken[i]=false;
+         g_lowBroken[i]=false;
+      }
 
       int periodSec=PeriodSeconds();
       int barsPerDay=(periodSec>0)?(int)MathMax(1,86400/periodSec):1;
