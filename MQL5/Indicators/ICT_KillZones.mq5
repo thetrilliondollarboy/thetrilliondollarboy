@@ -46,6 +46,16 @@ input color InpLowColor         = clrBlue;          // Minimum nuqta rangi
 input group "== Tarix =="
 input int InpHistoryDays = 5; // Nechta kunlik tarixni chizish
 
+input group "== Ovozli/Popup Alert =="
+input bool   InpEnableSoundAlert = true;       // Sessiya tugaganda ovozli signal chalinsin
+input string InpSoundFile        = "alert.wav"; // Ovoz fayli (terminal Sounds papkasidagi)
+input bool   InpEnablePopupAlert = true;       // Sessiya tugaganda ekranda xabar (Alert) chiqsin
+
+input group "== Telegram Alert =="
+input bool   InpEnableTelegram   = false; // Telegram orqali xabar yuborilsin
+input string InpTelegramBotToken = "";    // Telegram Bot Token (@BotFather dan olinadi)
+input string InpTelegramChatId   = "";    // Telegram Chat ID (raqam, masalan: 123456789)
+
 //--- session time tables (New York local time) -----------------------------
 int    g_startHour[SESSION_COUNT];
 int    g_startMin[SESSION_COUNT];
@@ -271,8 +281,79 @@ void DrawSessionLabel(const int idx)
 }
 
 //+------------------------------------------------------------------+
+//| Alert / Telegram                                                  |
+//+------------------------------------------------------------------+
+string UrlEncode(const string text)
+{
+   string result="";
+   int len=StringLen(text);
+   for(int i=0;i<len;i++)
+   {
+      ushort ch=StringGetCharacter(text,i);
+      bool unreserved=(ch>='A'&&ch<='Z')||(ch>='a'&&ch<='z')||(ch>='0'&&ch<='9')||ch=='-'||ch=='_'||ch=='.'||ch=='~';
+      if(unreserved)
+         result+=CharToString((uchar)ch);
+      else
+         result+=StringFormat("%%%02X",(int)ch);
+   }
+   return result;
+}
+
+void SendTelegramMessage(const string text)
+{
+   if(StringLen(InpTelegramBotToken)==0 || StringLen(InpTelegramChatId)==0)
+   {
+      Print("ICT Kill Zones: Telegram yuborilmadi - Bot Token yoki Chat ID kiritilmagan.");
+      return;
+   }
+
+   string url="https://api.telegram.org/bot"+InpTelegramBotToken+"/sendMessage";
+   string params="chat_id="+InpTelegramChatId+"&text="+UrlEncode(text);
+
+   int len=StringLen(params);
+   char post[];
+   ArrayResize(post,len);
+   for(int j=0;j<len;j++)
+      post[j]=(char)StringGetCharacter(params,j);
+
+   char result[];
+   string resultHeaders;
+   string headers="Content-Type: application/x-www-form-urlencoded\r\n";
+
+   ResetLastError();
+   int res=WebRequest("POST",url,headers,5000,post,result,resultHeaders);
+   if(res==-1)
+   {
+      int err=GetLastError();
+      PrintFormat("ICT Kill Zones: Telegram WebRequest xatosi (%d). Terminal sozlamalarida "+
+                  "Tools -> Options -> Expert Advisors bo'limida 'https://api.telegram.org' manzilini "+
+                  "WebRequest uchun ruxsat etilgan URL sifatida qo'shing.",err);
+   }
+}
+
+void FireSessionAlert(const int idx)
+{
+   string text=StringFormat(
+      "%s [%s]\n%s tugadi\nMax: %s (%s)\nMin: %s (%s)",
+      _Symbol,
+      EnumToString((ENUM_TIMEFRAMES)Period()),
+      g_label[idx],
+      DoubleToString(g_high[idx],_Digits),TimeToString(g_highTime[idx],TIME_DATE|TIME_MINUTES),
+      DoubleToString(g_low[idx],_Digits),TimeToString(g_lowTime[idx],TIME_DATE|TIME_MINUTES)
+   );
+
+   if(InpEnableSoundAlert)
+      PlaySound(InpSoundFile);
+   if(InpEnablePopupAlert)
+      Alert(text);
+   if(InpEnableTelegram)
+      SendTelegramMessage(text);
+}
+
+//+------------------------------------------------------------------+
 void ProcessSession(const int idx,const int scanStart,const int ratesTotal,
-                     const datetime &time[],const double &high[],const double &low[])
+                     const datetime &time[],const double &high[],const double &low[],
+                     const bool allowAlerts)
 {
    if(!g_enabled[idx]) return;
 
@@ -306,7 +387,11 @@ void ProcessSession(const int idx,const int scanStart,const int ratesTotal,
       else
       {
          if(g_active[idx])
+         {
             g_active[idx]=false;
+            if(allowAlerts)
+               FireSessionAlert(idx);
+         }
       }
    }
 }
@@ -341,8 +426,9 @@ int OnCalculate(const int rates_total,
       scanStart=(int)MathMax(0,prev_calculated-2);
    }
 
+   bool allowAlerts=(prev_calculated>0);
    for(int idx=0; idx<SESSION_COUNT; idx++)
-      ProcessSession(idx,scanStart,rates_total,time,high,low);
+      ProcessSession(idx,scanStart,rates_total,time,high,low,allowAlerts);
 
    return(rates_total);
 }
