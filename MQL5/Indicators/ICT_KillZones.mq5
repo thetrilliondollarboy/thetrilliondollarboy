@@ -19,6 +19,10 @@ enum ENUM_MARKET_TYPE
 #define SESS_NEWYORK      2
 #define SESS_LONDONCLOSE  3
 
+//--- Wingdings arrow codes (OBJPROP_ARROWCODE uchun) ----------------------
+#define ARROW_CODE_UP     233 // yuqoriga strelka
+#define ARROW_CODE_DOWN   234 // pastga strelka
+
 //--- inputs ---------------------------------------------------------------
 input group "== Bozor turi =="
 input ENUM_MARKET_TYPE InpMarketType = MARKET_FOREX; // Bozor turi (Forex / Indices) - Kill Zone vaqtlari shunga qarab tanlanadi
@@ -272,8 +276,8 @@ void DrawSessionMarkers(const int idx)
    if(!InpShowHighLowArrow) return;
    string hname="ICTKZ_"+g_key[idx]+"_"+MakeId(g_startTime[idx])+"_high";
    string lname="ICTKZ_"+g_key[idx]+"_"+MakeId(g_startTime[idx])+"_low";
-   SetArrow(hname,g_highTime[idx],g_high[idx],SYMBOL_ARROWDOWN,InpHighColor,true);
-   SetArrow(lname,g_lowTime[idx],g_low[idx],SYMBOL_ARROWUP,InpLowColor,false);
+   SetArrow(hname,g_highTime[idx],g_high[idx],ARROW_CODE_DOWN,InpHighColor,true);
+   SetArrow(lname,g_lowTime[idx],g_low[idx],ARROW_CODE_UP,InpLowColor,false);
 }
 
 void DrawWatchLine(const int idx,const bool isHigh,const datetime currentTime)
