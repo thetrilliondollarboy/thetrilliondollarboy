@@ -300,7 +300,8 @@ void DrawLevel(const int idx,const bool isHigh,const double price,
          ObjectSetString (0,tname,OBJPROP_FONT,"Arial");
          ObjectSetInteger(0,tname,OBJPROP_FONTSIZE,InpLabelFontSize);
          ObjectSetInteger(0,tname,OBJPROP_COLOR,InpLabelColor);
-         ObjectSetInteger(0,tname,OBJPROP_ANCHOR,ANCHOR_RIGHT);
+         // HIGH yozuvi chiziq tepasida, LOW yozuvi chiziq pastida
+         ObjectSetInteger(0,tname,OBJPROP_ANCHOR,isHigh?ANCHOR_RIGHT_LOWER:ANCHOR_RIGHT_UPPER);
          ObjectSetInteger(0,tname,OBJPROP_SELECTABLE,false);
          ObjectSetInteger(0,tname,OBJPROP_HIDDEN,true);
       }
