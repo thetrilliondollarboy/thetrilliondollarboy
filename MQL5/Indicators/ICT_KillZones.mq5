@@ -297,7 +297,7 @@ void DrawLevel(const int idx,const bool isHigh,const double price,
       {
          ObjectCreate(0,tname,OBJ_TEXT,0,labelT,price);
          ObjectSetString (0,tname,OBJPROP_TEXT,txt);
-         ObjectSetString (0,tname,OBJPROP_FONT,"Arial Black");
+         ObjectSetString (0,tname,OBJPROP_FONT,"Arial");
          ObjectSetInteger(0,tname,OBJPROP_FONTSIZE,InpLabelFontSize);
          ObjectSetInteger(0,tname,OBJPROP_COLOR,InpLabelColor);
          ObjectSetInteger(0,tname,OBJPROP_ANCHOR,ANCHOR_RIGHT);
