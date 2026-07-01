@@ -202,14 +202,24 @@ int MinutesOfDay(const datetime t)
    return m.hour*60+m.min;
 }
 
-bool IsInSession(const datetime nyTime,const int idx)
+bool IsInSession(const datetime nyBarOpen,const int idx)
 {
-   int m=MinutesOfDay(nyTime);
+   // Bar OCHILISH vaqti bilan emas, butun bar oralig'i [ochilish, yopilish)
+   // sessiya oralig'i bilan kesishishi bo'yicha tekshiramiz. Shunda sessiya
+   // oxiridagi oxirgi bar (masalan 6:55->7:00) ham to'liq hisobga olinadi.
+   int periodMin=(int)(PeriodSeconds()/60);
+   if(periodMin<1) periodMin=1;
+
    int startM=g_startHour[idx]*60+g_startMin[idx];
    int endM  =g_endHour[idx]*60+g_endMin[idx];
    int endEff=endM; if(endEff<=startM) endEff+=1440;
-   int mEff=m;      if(mEff<startM)    mEff+=1440;
-   return (mEff>=startM && mEff<endEff);
+
+   int openM=MinutesOfDay(nyBarOpen);
+   int oEff=openM; if(oEff<startM) oEff+=1440;
+   int cEff=oEff+periodMin;              // bar yopilish vaqti (shu ramkada)
+
+   // bar [oEff, cEff) va sessiya [startM, endEff) kesishsa - bar sessiya ichida
+   return (oEff<endEff && cEff>startM);
 }
 
 //+------------------------------------------------------------------+
