@@ -47,14 +47,13 @@ input int   InpLabelFontSize    = 9;               // Yozuv shrift o'lchami
 input group "== Tarix =="
 input int InpHistoryDays = 5; // Nechta kunlik tarixni chizish
 
-input group "== Ovozli/Popup Alert =="
-input bool   InpEnableSoundAlert = true;       // Sessiya tugaganda ovozli signal chalinsin
-input string InpSoundFile        = "alert.wav"; // Ovoz fayli (terminal Sounds papkasidagi)
-input bool   InpEnablePopupAlert = true;       // Sessiya tugaganda ekranda xabar (Alert) chiqsin
+input group "== Alert (faqat max/min BIRINCHI marta buzilganda) =="
+input bool   InpEnableBreakoutAlert = true;         // Killzona tugagach max/min buzilsa alert berilsin (bir marta)
+input bool   InpEnableSoundAlert    = true;         // Ovozli signal chalinsin
+input string InpBreakoutSoundFile   = "alert2.wav"; // Ovoz fayli (terminal Sounds papkasidagi)
+input bool   InpEnablePopupAlert    = true;         // Ekranda popup xabar chiqsin
 
-input group "== Maksimum/Minimum buzilishi alerti =="
-input bool   InpEnableBreakoutAlert = true;         // Sessiya tugagach max/min nuqta narx bilan buzilsa alert berilsin
-input string InpBreakoutSoundFile   = "alert2.wav"; // Buzilish uchun alohida ovoz fayli
+input group "== HIGH/LOW chiziqlari =="
 input bool   InpShowLevelLines      = true;         // HIGH/LOW darajalarini chiziq bilan ko'rsatish
 
 input group "== Telegram Alert =="
@@ -374,25 +373,6 @@ void SendTelegramMessage(const string text)
    }
 }
 
-void FireSessionAlert(const int idx)
-{
-   string text=StringFormat(
-      "%s [%s]\n%s tugadi\nMax: %s (%s)\nMin: %s (%s)",
-      _Symbol,
-      EnumToString((ENUM_TIMEFRAMES)Period()),
-      g_label[idx],
-      DoubleToString(g_high[idx],_Digits),TimeToString(g_highTime[idx],TIME_DATE|TIME_MINUTES),
-      DoubleToString(g_low[idx],_Digits),TimeToString(g_lowTime[idx],TIME_DATE|TIME_MINUTES)
-   );
-
-   if(InpEnableSoundAlert)
-      PlaySound(InpSoundFile);
-   if(InpEnablePopupAlert)
-      Alert(text);
-   if(InpEnableTelegram)
-      SendTelegramMessage(text);
-}
-
 void FireBreakoutAlert(const int idx,const bool isHigh,const datetime t,const double price)
 {
    if(!InpEnableBreakoutAlert) return;
@@ -456,10 +436,9 @@ void ProcessSession(const int idx,const int scanStart,const int ratesTotal,
          if(g_active[idx])
          {
             g_active[idx]=false;
-            if(allowAlerts)
-               FireSessionAlert(idx);
 
-            // sessiya tugadi - endi max/min nuqtalar narx bilan buzilishini kuzatamiz
+            // killzona TO'LIQ tugadi - endi max/min nuqtalar buzilishini kuzatamiz
+            // (sessiya tugashining o'zida alert berilmaydi, faqat buzilishda)
             g_watching[idx]=true;
             g_watchHigh[idx]=g_high[idx];
             g_watchLow[idx]=g_low[idx];
