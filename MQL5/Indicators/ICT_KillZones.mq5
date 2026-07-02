@@ -56,6 +56,15 @@ input bool   InpEnablePopupAlert    = true;         // Ekranda popup xabar chiqs
 input group "== HIGH/LOW chiziqlari =="
 input bool   InpShowLevelLines      = true;         // HIGH/LOW darajalarini chiziq bilan ko'rsatish
 
+input group "== Market Structure (MSS) - break dan keyin =="
+input bool   InpEnableMSS       = true;         // Break dan keyin market structure (MSS) qidirilsin
+input int    InpStructBarsMin   = 5;            // Swing aniqlash - MIN barlar (har tomonda)
+input int    InpStructBarsMax   = 10;           // Swing aniqlash - MAX barlar (har tomonda)
+input color  InpMSSColor        = clrMagenta;   // MSS chizig'i/yozuvi rangi
+input int    InpMSSLineWidth    = 2;            // MSS chizig'i qalinligi
+input bool   InpEnableMSSAlert  = true;         // MSS topilganda alert berilsin
+input string InpMSSSoundFile    = "alert3.wav"; // MSS uchun alohida ovoz (break dan farqli)
+
 input group "== Telegram Alert =="
 input bool   InpEnableTelegram   = false; // Telegram orqali xabar yuborilsin
 input string InpTelegramBotToken = "";    // Telegram Bot Token (@BotFather dan olinadi)
@@ -87,6 +96,15 @@ double   g_watchLow[SESSION_COUNT];
 bool     g_highBroken[SESSION_COUNT];
 bool     g_lowBroken[SESSION_COUNT];
 
+//--- market structure (MSS) watch state ------------------------------------
+bool     g_mssDnWatch[SESSION_COUNT]; // HIGH buzildi -> bearish MSS (swing LOW pastga) qidirilyapti
+bool     g_mssDnDone[SESSION_COUNT];
+bool     g_mssUpWatch[SESSION_COUNT]; // LOW buzildi  -> bullish MSS (swing HIGH yuqoriga) qidirilyapti
+bool     g_mssUpDone[SESSION_COUNT];
+
+int      g_sMin=5;  // swing strength (har tomonda min barlar) - OnInit da to'g'rilanadi
+int      g_sMax=10; // swing strength (har tomonda max barlar)
+
 //+------------------------------------------------------------------+
 int OnInit()
 {
@@ -115,12 +133,20 @@ int OnInit()
    g_color[SESS_NEWYORK]     = InpNewYorkColor;
    g_color[SESS_LONDONCLOSE] = InpLondonCloseColor;
 
+   // swing strength diapazonini to'g'rilash (min<=max, >=1)
+   g_sMin=(int)MathMax(1,MathMin(InpStructBarsMin,InpStructBarsMax));
+   g_sMax=(int)MathMax(g_sMin,MathMax(InpStructBarsMin,InpStructBarsMax));
+
    for(int i=0;i<SESSION_COUNT;i++)
    {
       g_active[i]=false;
       g_watching[i]=false;
       g_highBroken[i]=false;
       g_lowBroken[i]=false;
+      g_mssDnWatch[i]=false;
+      g_mssDnDone[i]=false;
+      g_mssUpWatch[i]=false;
+      g_mssUpDone[i]=false;
    }
 
    ObjectsDeleteAll(0,"ICTKZ_");
@@ -396,6 +422,169 @@ void FireBreakoutAlert(const int idx,const bool isHigh,const datetime t,const do
 }
 
 //+------------------------------------------------------------------+
+//| Market Structure (MSS) yordamchi funksiyalari                     |
+//+------------------------------------------------------------------+
+bool IsSwingLow(const int j,const int s,const int ratesTotal,const double &low[])
+{
+   if(j-s<0 || j+s>=ratesTotal) return false;
+   for(int k=1;k<=s;k++)
+      if(low[j]>=low[j-k] || low[j]>=low[j+k]) return false;
+   return true;
+}
+
+bool IsSwingHigh(const int j,const int s,const int ratesTotal,const double &high[])
+{
+   if(j-s<0 || j+s>=ratesTotal) return false;
+   for(int k=1;k<=s;k++)
+      if(high[j]<=high[j-k] || high[j]<=high[j+k]) return false;
+   return true;
+}
+
+// i-bardan orqaga (sessiya boshigacha) eng oxirgi tasdiqlangan swing LOW ni topadi.
+// Avval kuchli (g_sMax) swing, topilmasa g_sMin gacha yumshatib qidiradi.
+int FindRecentSwingLow(const int i,const datetime sinceT,const int ratesTotal,
+                       const datetime &time[],const double &low[])
+{
+   for(int s=g_sMax; s>=g_sMin; s--)
+      for(int j=i-s; j>=1 && time[j]>=sinceT; j--)
+         if(IsSwingLow(j,s,ratesTotal,low))
+            return j;
+   return -1;
+}
+
+int FindRecentSwingHigh(const int i,const datetime sinceT,const int ratesTotal,
+                        const datetime &time[],const double &high[])
+{
+   for(int s=g_sMax; s>=g_sMin; s--)
+      for(int j=i-s; j>=1 && time[j]>=sinceT; j--)
+         if(IsSwingHigh(j,s,ratesTotal,high))
+            return j;
+   return -1;
+}
+
+void DrawMSSLine(const int idx,const bool bullish,const datetime tPivot,
+                 const double price,const datetime rightTime,const bool finalBroken)
+{
+   string base="ICTKZ_"+g_key[idx]+"_"+MakeId(g_startTime[idx])+(bullish?"_mssUp":"_mssDn");
+   string lname=base+"_ln";
+   string tname=base+"_tx";
+   datetime t2=rightTime+PeriodSeconds();
+
+   if(ObjectFind(0,lname)<0)
+   {
+      ObjectCreate(0,lname,OBJ_TREND,0,tPivot,price,t2,price);
+      ObjectSetInteger(0,lname,OBJPROP_COLOR,InpMSSColor);
+      ObjectSetInteger(0,lname,OBJPROP_STYLE,STYLE_DASH);
+      ObjectSetInteger(0,lname,OBJPROP_WIDTH,InpMSSLineWidth);
+      ObjectSetInteger(0,lname,OBJPROP_RAY_LEFT,false);
+      ObjectSetInteger(0,lname,OBJPROP_RAY_RIGHT,false);
+      ObjectSetInteger(0,lname,OBJPROP_SELECTABLE,false);
+      ObjectSetInteger(0,lname,OBJPROP_HIDDEN,true);
+      ObjectSetInteger(0,lname,OBJPROP_BACK,false);
+   }
+   else
+   {
+      ObjectSetInteger(0,lname,OBJPROP_TIME,0,tPivot);
+      ObjectSetDouble (0,lname,OBJPROP_PRICE,0,price);
+      ObjectSetInteger(0,lname,OBJPROP_TIME,1,t2);
+      ObjectSetDouble (0,lname,OBJPROP_PRICE,1,price);
+   }
+
+   // buzilganda: chiziq qattiq (solid) bo'ladi va "MSS" yozuvi qo'yiladi
+   if(finalBroken)
+   {
+      ObjectSetInteger(0,lname,OBJPROP_STYLE,STYLE_SOLID);
+      string txt=bullish?"MSS UP":"MSS DN";
+      if(ObjectFind(0,tname)<0)
+      {
+         ObjectCreate(0,tname,OBJ_TEXT,0,t2,price);
+         ObjectSetString (0,tname,OBJPROP_TEXT,txt);
+         ObjectSetString (0,tname,OBJPROP_FONT,"Arial");
+         ObjectSetInteger(0,tname,OBJPROP_FONTSIZE,InpLabelFontSize);
+         ObjectSetInteger(0,tname,OBJPROP_COLOR,InpMSSColor);
+         ObjectSetInteger(0,tname,OBJPROP_ANCHOR,bullish?ANCHOR_LEFT_UPPER:ANCHOR_LEFT_LOWER);
+         ObjectSetInteger(0,tname,OBJPROP_SELECTABLE,false);
+         ObjectSetInteger(0,tname,OBJPROP_HIDDEN,true);
+      }
+      else
+      {
+         ObjectSetInteger(0,tname,OBJPROP_TIME,0,t2);
+         ObjectSetDouble (0,tname,OBJPROP_PRICE,0,price);
+      }
+   }
+}
+
+void FireMSSAlert(const int idx,const bool bullish,const datetime t,const double price)
+{
+   if(!InpEnableMSSAlert) return;
+
+   string dir=bullish?"BULLISH Market Structure Shift":"BEARISH Market Structure Shift";
+   string text=StringFormat(
+      "%s [%s]\n%s\n%s\nDaraja: %s   Vaqt: %s",
+      _Symbol,
+      EnumToString((ENUM_TIMEFRAMES)Period()),
+      g_label[idx],
+      dir,
+      DoubleToString(price,_Digits),TimeToString(t,TIME_DATE|TIME_MINUTES)
+   );
+
+   if(InpEnableSoundAlert)
+      PlaySound(InpMSSSoundFile);
+   if(InpEnablePopupAlert)
+      Alert(text);
+   if(InpEnableTelegram)
+      SendTelegramMessage(text);
+}
+
+// break dan keyin market structure shift qidirish (joriy timeframe)
+void ProcessMSS(const int idx,const int i,const int ratesTotal,
+                const datetime &time[],const double &high[],const double &low[],
+                const bool allowAlerts)
+{
+   datetime sinceT=g_startTime[idx];
+
+   // HIGH buzilgan -> bearish MSS: eng oxirgi swing LOW ni pastga buzsa
+   if(g_mssDnWatch[idx] && !g_mssDnDone[idx])
+   {
+      int piv=FindRecentSwingLow(i,sinceT,ratesTotal,time,low);
+      if(piv>=0)
+      {
+         double P=low[piv];
+         if(low[i]<P)
+         {
+            DrawMSSLine(idx,false,time[piv],P,time[i],true);
+            g_mssDnDone[idx]=true;
+            g_mssDnWatch[idx]=false;
+            if(allowAlerts)
+               FireMSSAlert(idx,false,time[i],P);
+         }
+         else
+            DrawMSSLine(idx,false,time[piv],P,time[i],false);
+      }
+   }
+
+   // LOW buzilgan -> bullish MSS: eng oxirgi swing HIGH ni yuqoriga buzsa
+   if(g_mssUpWatch[idx] && !g_mssUpDone[idx])
+   {
+      int piv=FindRecentSwingHigh(i,sinceT,ratesTotal,time,high);
+      if(piv>=0)
+      {
+         double P=high[piv];
+         if(high[i]>P)
+         {
+            DrawMSSLine(idx,true,time[piv],P,time[i],true);
+            g_mssUpDone[idx]=true;
+            g_mssUpWatch[idx]=false;
+            if(allowAlerts)
+               FireMSSAlert(idx,true,time[i],P);
+         }
+         else
+            DrawMSSLine(idx,true,time[piv],P,time[i],false);
+      }
+   }
+}
+
+//+------------------------------------------------------------------+
 void ProcessSession(const int idx,const int scanStart,const int ratesTotal,
                      const datetime &time[],const double &high[],const double &low[],
                      const bool allowAlerts)
@@ -411,7 +600,10 @@ void ProcessSession(const int idx,const int scanStart,const int ratesTotal,
       {
          if(!g_active[idx])
          {
-            g_watching[idx]=false; // yangi sessiya boshlandi - eski buzilish kuzatuvi to'xtaydi
+            // yangi sessiya boshlandi - eski kuzatuvlar to'xtaydi
+            g_watching[idx]=false;
+            g_mssDnWatch[idx]=false; g_mssDnDone[idx]=false;
+            g_mssUpWatch[idx]=false; g_mssUpDone[idx]=false;
             g_active[idx]=true;
             g_startTime[idx]=time[i];
             g_high[idx]=high[i];
@@ -456,12 +648,16 @@ void ProcessSession(const int idx,const int scanStart,const int ratesTotal,
          if(!g_highBroken[idx] && high[i]>g_watchHigh[idx])
          {
             g_highBroken[idx]=true;
+            // HIGH buzildi -> bearish MSS qidirishni boshlaymiz
+            g_mssDnWatch[idx]=true; g_mssDnDone[idx]=false;
             if(allowAlerts)
                FireBreakoutAlert(idx,true,time[i],high[i]);
          }
          if(!g_lowBroken[idx] && low[i]<g_watchLow[idx])
          {
             g_lowBroken[idx]=true;
+            // LOW buzildi -> bullish MSS qidirishni boshlaymiz
+            g_mssUpWatch[idx]=true; g_mssUpDone[idx]=false;
             if(allowAlerts)
                FireBreakoutAlert(idx,false,time[i],low[i]);
          }
@@ -469,6 +665,10 @@ void ProcessSession(const int idx,const int scanStart,const int ratesTotal,
          // chiziq buzilmaguncha o'ngga cho'ziladi, buzilgan barda to'xtaydi
          DrawLevel(idx,true,g_watchHigh[idx],time[i],hiWasBroken);
          DrawLevel(idx,false,g_watchLow[idx],time[i],loWasBroken);
+
+         // break dan keyin market structure shift qidirish
+         if(InpEnableMSS)
+            ProcessMSS(idx,i,ratesTotal,time,high,low,allowAlerts);
       }
    }
 }
@@ -496,6 +696,10 @@ int OnCalculate(const int rates_total,
          g_watching[i]=false;
          g_highBroken[i]=false;
          g_lowBroken[i]=false;
+         g_mssDnWatch[i]=false;
+         g_mssDnDone[i]=false;
+         g_mssUpWatch[i]=false;
+         g_mssUpDone[i]=false;
       }
 
       int periodSec=PeriodSeconds();
