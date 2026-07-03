@@ -58,8 +58,12 @@ input bool   InpShowLevelLines      = true;         // HIGH/LOW darajalarini chi
 
 input group "== Market Structure (MSS) - break dan keyin =="
 input bool   InpEnableMSS       = true;         // Break dan keyin market structure (MSS) qidirilsin (faqat chart TF)
-input int    InpStructBarsMin   = 5;            // Swing aniqlash - MIN barlar (har tomonda)
-input int    InpStructBarsMax   = 10;           // Swing aniqlash - MAX barlar (har tomonda)
+input int    InpStructMinM1     = 5;            // M1:  swing MIN barlar (har tomonda)
+input int    InpStructMaxM1     = 10;           // M1:  swing MAX barlar (har tomonda)
+input int    InpStructMinM5     = 5;            // M5:  swing MIN barlar (har tomonda)
+input int    InpStructMaxM5     = 10;           // M5:  swing MAX barlar (har tomonda)
+input int    InpStructMinM15    = 5;            // M15: swing MIN barlar (har tomonda)
+input int    InpStructMaxM15    = 10;           // M15: swing MAX barlar (har tomonda)
 input color  InpMSSColor        = clrOrange;    // MSS chizig'i/yozuvi rangi (M5 dizayni)
 input int    InpMSSLineWidth    = 2;            // MSS chizig'i qalinligi
 input bool   InpEnableMSSAlert  = true;         // MSS topilganda alert berilsin
@@ -116,8 +120,8 @@ bool     g_mssUpDone[SESSION_COUNT][MSS_TF_COUNT];
 datetime g_hiBreakTime[SESSION_COUNT];             // HIGH buzilgan vaqt (MSS shu vaqtdan qidiriladi)
 datetime g_loBreakTime[SESSION_COUNT];             // LOW  buzilgan vaqt
 
-int      g_sMin=5;  // swing strength (har tomonda min barlar) - OnInit da to'g'rilanadi
-int      g_sMax=10; // swing strength (har tomonda max barlar)
+int      g_sMinTf[MSS_TF_COUNT]; // har TF uchun swing MIN barlar (OnInit da)
+int      g_sMaxTf[MSS_TF_COUNT]; // har TF uchun swing MAX barlar (OnInit da)
 
 //--- previous day HIGH/LOW state -------------------------------------------
 double   g_pdTermHi=0, g_pdTermLo=0; datetime g_pdTermStart=0; long g_pdTermDay=-1;
@@ -153,9 +157,14 @@ int OnInit()
    g_color[SESS_NEWYORK]     = InpNewYorkColor;
    g_color[SESS_LONDONCLOSE] = InpLondonCloseColor;
 
-   // swing strength diapazonini to'g'rilash (min<=max, >=1)
-   g_sMin=(int)MathMax(1,MathMin(InpStructBarsMin,InpStructBarsMax));
-   g_sMax=(int)MathMax(g_sMin,MathMax(InpStructBarsMin,InpStructBarsMax));
+   // har TF uchun swing diapazonini alohida to'g'rilaymiz (min<=max, >=1)
+   int mnArr[MSS_TF_COUNT]={InpStructMinM1,InpStructMinM5,InpStructMinM15};
+   int mxArr[MSS_TF_COUNT]={InpStructMaxM1,InpStructMaxM5,InpStructMaxM15};
+   for(int t=0;t<MSS_TF_COUNT;t++)
+   {
+      g_sMinTf[t]=(int)MathMax(1,MathMin(mnArr[t],mxArr[t]));
+      g_sMaxTf[t]=(int)MathMax(g_sMinTf[t],MathMax(mnArr[t],mxArr[t]));
+   }
 
    for(int i=0;i<SESSION_COUNT;i++)
    {
@@ -549,9 +558,12 @@ void ProcessMSS_TF(const int idx,const int tfIdx,const bool bullish,const bool a
    datetime sinceT = bullish ? g_loBreakTime[idx] : g_hiBreakTime[idx];
    if(sinceT<=0) return;
 
+   int sMin=g_sMinTf[tfIdx];  // shu TF ning o'z diapazoni
+   int sMax=g_sMaxTf[tfIdx];
+
    MqlRates r[];
    int n=CopyRates(_Symbol,g_mssTF[tfIdx],0,2000,r);
-   if(n<=2*g_sMax+2) return;
+   if(n<=2*sMax+2) return;
    ArraySetAsSeries(r,false); // eng eski birinchi
 
    double hi[]; double lo[]; datetime tm[];
@@ -586,8 +598,9 @@ void ProcessMSS_TF(const int idx,const int tfIdx,const bool bullish,const bool a
          }
       }
 
-      // 2) eng oxirgi tasdiqlangan swing ni yangilaymiz (g_sMin dan g_sMax gacha)
-      for(int s=g_sMin;s<=g_sMax;s++)
+      // 2) eng oxirgi tasdiqlangan swing ni yangilaymiz (shu TF diapazoni bo'yicha)
+      //    kichik s dan boshlanadi -> diapazondagi ENG SO'NGGI max/min olinadi
+      for(int s=sMin;s<=sMax;s++)
       {
          int c=k-s;
          if(c-s<0) break;
