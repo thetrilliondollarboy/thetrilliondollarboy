@@ -60,8 +60,11 @@ input group "== Market Structure (MSS) - break dan keyin =="
 input bool   InpEnableMSS       = true;         // Break dan keyin market structure (MSS) qidirilsin
 input int    InpStructBarsMin   = 5;            // Swing aniqlash - MIN barlar (har tomonda)
 input int    InpStructBarsMax   = 10;           // Swing aniqlash - MAX barlar (har tomonda)
-input color  InpMSSColor        = clrMagenta;   // MSS chizig'i/yozuvi rangi
-input int    InpMSSLineWidth    = 2;            // MSS chizig'i qalinligi
+input color  InpMSSColorM1      = clrDeepPink;  // MSS M1 rangi
+input color  InpMSSColorM5      = clrOrange;    // MSS M5 rangi
+input color  InpMSSColorM15     = clrAqua;      // MSS M15 rangi
+input int    InpMSSLineWidth    = 1;            // MSS chizig'i qalinligi
+input int    InpMSSLabelGap     = 40;           // TF yozuvlari orasidagi vertikal masofa (punkt)
 input bool   InpEnableMSSAlert  = true;         // MSS topilganda alert berilsin
 input string InpMSSSoundFile    = "alert3.wav"; // MSS uchun alohida ovoz (break dan farqli)
 
@@ -116,6 +119,9 @@ bool     g_mssUpDone[SESSION_COUNT][MSS_TF_COUNT];
 datetime g_hiBreakTime[SESSION_COUNT];             // HIGH buzilgan vaqt (MSS shu vaqtdan qidiriladi)
 datetime g_loBreakTime[SESSION_COUNT];             // LOW  buzilgan vaqt
 
+color           g_mssColor[MSS_TF_COUNT];          // har TF uchun rang (OnInit da)
+ENUM_LINE_STYLE g_mssStyle[MSS_TF_COUNT] = {STYLE_DOT,STYLE_DASH,STYLE_SOLID}; // M1/M5/M15
+
 int      g_sMin=5;  // swing strength (har tomonda min barlar) - OnInit da to'g'rilanadi
 int      g_sMax=10; // swing strength (har tomonda max barlar)
 
@@ -156,6 +162,10 @@ int OnInit()
    // swing strength diapazonini to'g'rilash (min<=max, >=1)
    g_sMin=(int)MathMax(1,MathMin(InpStructBarsMin,InpStructBarsMax));
    g_sMax=(int)MathMax(g_sMin,MathMax(InpStructBarsMin,InpStructBarsMax));
+
+   g_mssColor[0]=InpMSSColorM1;
+   g_mssColor[1]=InpMSSColorM5;
+   g_mssColor[2]=InpMSSColorM15;
 
    for(int i=0;i<SESSION_COUNT;i++)
    {
@@ -470,12 +480,13 @@ void DrawMSSLine(const int idx,const int tfIdx,const bool bullish,const datetime
    string lname=base+"_ln";
    string tname=base+"_tx";
    datetime t2=rightTime;
+   color clr=g_mssColor[tfIdx];
 
    if(ObjectFind(0,lname)<0)
    {
       ObjectCreate(0,lname,OBJ_TREND,0,tPivot,price,t2,price);
-      ObjectSetInteger(0,lname,OBJPROP_COLOR,InpMSSColor);
-      ObjectSetInteger(0,lname,OBJPROP_STYLE,STYLE_DASH);
+      ObjectSetInteger(0,lname,OBJPROP_COLOR,clr);
+      ObjectSetInteger(0,lname,OBJPROP_STYLE,g_mssStyle[tfIdx]);
       ObjectSetInteger(0,lname,OBJPROP_WIDTH,InpMSSLineWidth);
       ObjectSetInteger(0,lname,OBJPROP_RAY_LEFT,false);
       ObjectSetInteger(0,lname,OBJPROP_RAY_RIGHT,false);
@@ -491,26 +502,30 @@ void DrawMSSLine(const int idx,const int tfIdx,const bool bullish,const datetime
       ObjectSetDouble (0,lname,OBJPROP_PRICE,1,price);
    }
 
-   // buzilganda: chiziq qattiq (solid) bo'ladi va "MSS <TF>" yozuvi qo'yiladi
+   // buzilganda: chiziq qalinlashadi va "MSS <TF>" yozuvi qo'yiladi.
+   // yozuvlar bir-biriga yopishmasligi uchun har TF vertikal ravishda suriladi.
    if(finalBroken)
    {
-      ObjectSetInteger(0,lname,OBJPROP_STYLE,STYLE_SOLID);
+      ObjectSetInteger(0,lname,OBJPROP_WIDTH,InpMSSLineWidth+1);
       string txt="MSS "+g_mssTFname[tfIdx]+(bullish?" UP":" DN");
+      double gap=(tfIdx+1)*InpMSSLabelGap*_Point;
+      double lblPrice = bullish ? price+gap : price-gap;
       if(ObjectFind(0,tname)<0)
       {
-         ObjectCreate(0,tname,OBJ_TEXT,0,t2,price);
+         ObjectCreate(0,tname,OBJ_TEXT,0,t2,lblPrice);
          ObjectSetString (0,tname,OBJPROP_TEXT,txt);
          ObjectSetString (0,tname,OBJPROP_FONT,"Arial");
          ObjectSetInteger(0,tname,OBJPROP_FONTSIZE,InpLabelFontSize);
-         ObjectSetInteger(0,tname,OBJPROP_COLOR,InpMSSColor);
-         ObjectSetInteger(0,tname,OBJPROP_ANCHOR,bullish?ANCHOR_LEFT_UPPER:ANCHOR_LEFT_LOWER);
+         ObjectSetInteger(0,tname,OBJPROP_COLOR,clr);
+         // UP yozuvi chiziq tepasida, DN yozuvi chiziq pastida
+         ObjectSetInteger(0,tname,OBJPROP_ANCHOR,bullish?ANCHOR_LEFT_LOWER:ANCHOR_LEFT_UPPER);
          ObjectSetInteger(0,tname,OBJPROP_SELECTABLE,false);
          ObjectSetInteger(0,tname,OBJPROP_HIDDEN,true);
       }
       else
       {
          ObjectSetInteger(0,tname,OBJPROP_TIME,0,t2);
-         ObjectSetDouble (0,tname,OBJPROP_PRICE,0,price);
+         ObjectSetDouble (0,tname,OBJPROP_PRICE,0,lblPrice);
       }
    }
 }
@@ -736,9 +751,11 @@ void DrawPrevDayLine(const string id,const bool isHigh,const double price,
    ObjectSetInteger(0,lname,OBJPROP_TIME,1,TimeCurrent());
    ObjectSetDouble (0,lname,OBJPROP_PRICE,1,price);
 
+   // yozuv o'ng chetda (oxirgi bar) turadi
+   datetime lblT=TimeCurrent();
    if(ObjectFind(0,tname)<0)
    {
-      ObjectCreate(0,tname,OBJ_TEXT,0,startT,price);
+      ObjectCreate(0,tname,OBJ_TEXT,0,lblT,price);
       ObjectSetString (0,tname,OBJPROP_FONT,"Arial");
       ObjectSetInteger(0,tname,OBJPROP_FONTSIZE,InpLabelFontSize);
       ObjectSetInteger(0,tname,OBJPROP_ANCHOR,isHigh?ANCHOR_LEFT_LOWER:ANCHOR_LEFT_UPPER);
@@ -747,7 +764,8 @@ void DrawPrevDayLine(const string id,const bool isHigh,const double price,
    }
    ObjectSetString (0,tname,OBJPROP_TEXT,labelTxt);
    ObjectSetInteger(0,tname,OBJPROP_COLOR,clr);
-   ObjectSetInteger(0,tname,OBJPROP_TIME,0,startT);
+   ObjectSetInteger(0,tname,OBJPROP_ANCHOR,isHigh?ANCHOR_LEFT_LOWER:ANCHOR_LEFT_UPPER);
+   ObjectSetInteger(0,tname,OBJPROP_TIME,0,lblT);
    ObjectSetDouble (0,tname,OBJPROP_PRICE,0,price);
 }
 
