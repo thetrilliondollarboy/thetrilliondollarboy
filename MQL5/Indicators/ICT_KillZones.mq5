@@ -65,6 +65,14 @@ input int    InpMSSLineWidth    = 2;            // MSS chizig'i qalinligi
 input bool   InpEnableMSSAlert  = true;         // MSS topilganda alert berilsin
 input string InpMSSSoundFile    = "alert3.wav"; // MSS uchun alohida ovoz (break dan farqli)
 
+input group "== Oldingi kun HIGH/LOW (PDH/PDL) =="
+input bool   InpEnablePrevDay      = true;         // Oldingi kun max/min chiziqlari
+input color  InpPrevDayTermColor   = clrGray;      // Terminal-kun bo'yicha PDH/PDL rangi
+input color  InpPrevDayNyColor     = clrTeal;      // Nyu-York kun bo'yicha PDH/PDL rangi
+input int    InpPrevDayWidth       = 1;            // PDH/PDL chiziq qalinligi
+input bool   InpEnablePrevDayAlert = true;         // PDH/PDL buzilganda alert berilsin
+input string InpPrevDaySoundFile   = "alert4.wav"; // Oldingi kun darajasi uchun ovoz (barchasidan farqli)
+
 input group "== Telegram Alert =="
 input bool   InpEnableTelegram   = false; // Telegram orqali xabar yuborilsin
 input string InpTelegramBotToken = "";    // Telegram Bot Token (@BotFather dan olinadi)
@@ -96,14 +104,26 @@ double   g_watchLow[SESSION_COUNT];
 bool     g_highBroken[SESSION_COUNT];
 bool     g_lowBroken[SESSION_COUNT];
 
-//--- market structure (MSS) watch state ------------------------------------
-bool     g_mssDnWatch[SESSION_COUNT]; // HIGH buzildi -> bearish MSS (swing LOW pastga) qidirilyapti
-bool     g_mssDnDone[SESSION_COUNT];
-bool     g_mssUpWatch[SESSION_COUNT]; // LOW buzildi  -> bullish MSS (swing HIGH yuqoriga) qidirilyapti
-bool     g_mssUpDone[SESSION_COUNT];
+//--- market structure (MSS) - multi timeframe (M1 / M5 / M15) ---------------
+#define MSS_TF_COUNT 3
+ENUM_TIMEFRAMES g_mssTF[MSS_TF_COUNT]     = {PERIOD_M1,PERIOD_M5,PERIOD_M15};
+string          g_mssTFname[MSS_TF_COUNT] = {"M1","M5","M15"};
+
+bool     g_mssDnWatch[SESSION_COUNT];              // HIGH buzildi -> bearish MSS qidirilyapti
+bool     g_mssUpWatch[SESSION_COUNT];              // LOW  buzildi -> bullish MSS qidirilyapti
+bool     g_mssDnDone[SESSION_COUNT][MSS_TF_COUNT]; // har TF uchun alohida tugallanish
+bool     g_mssUpDone[SESSION_COUNT][MSS_TF_COUNT];
+datetime g_hiBreakTime[SESSION_COUNT];             // HIGH buzilgan vaqt (MSS shu vaqtdan qidiriladi)
+datetime g_loBreakTime[SESSION_COUNT];             // LOW  buzilgan vaqt
 
 int      g_sMin=5;  // swing strength (har tomonda min barlar) - OnInit da to'g'rilanadi
 int      g_sMax=10; // swing strength (har tomonda max barlar)
+
+//--- previous day HIGH/LOW state -------------------------------------------
+double   g_pdTermHi=0, g_pdTermLo=0; datetime g_pdTermStart=0; long g_pdTermDay=-1;
+bool     g_pdTermHiBroken=false, g_pdTermLoBroken=false;
+double   g_pdNyHi=0,   g_pdNyLo=0;   datetime g_pdNyStart=0;   long g_pdNyDay=-1;
+bool     g_pdNyHiBroken=false,   g_pdNyLoBroken=false;
 
 //+------------------------------------------------------------------+
 int OnInit()
@@ -144,10 +164,13 @@ int OnInit()
       g_highBroken[i]=false;
       g_lowBroken[i]=false;
       g_mssDnWatch[i]=false;
-      g_mssDnDone[i]=false;
       g_mssUpWatch[i]=false;
-      g_mssUpDone[i]=false;
+      g_hiBreakTime[i]=0;
+      g_loBreakTime[i]=0;
+      for(int t=0;t<MSS_TF_COUNT;t++){ g_mssDnDone[i][t]=false; g_mssUpDone[i][t]=false; }
    }
+
+   g_pdTermDay=-1; g_pdNyDay=-1;
 
    ObjectsDeleteAll(0,"ICTKZ_");
    return(INIT_SUCCEEDED);
@@ -440,35 +463,13 @@ bool IsSwingHigh(const int j,const int s,const int ratesTotal,const double &high
    return true;
 }
 
-// i-bardan orqaga (sessiya boshigacha) eng oxirgi tasdiqlangan swing LOW ni topadi.
-// Avval kuchli (g_sMax) swing, topilmasa g_sMin gacha yumshatib qidiradi.
-int FindRecentSwingLow(const int i,const datetime sinceT,const int ratesTotal,
-                       const datetime &time[],const double &low[])
-{
-   for(int s=g_sMax; s>=g_sMin; s--)
-      for(int j=i-s; j>=1 && time[j]>=sinceT; j--)
-         if(IsSwingLow(j,s,ratesTotal,low))
-            return j;
-   return -1;
-}
-
-int FindRecentSwingHigh(const int i,const datetime sinceT,const int ratesTotal,
-                        const datetime &time[],const double &high[])
-{
-   for(int s=g_sMax; s>=g_sMin; s--)
-      for(int j=i-s; j>=1 && time[j]>=sinceT; j--)
-         if(IsSwingHigh(j,s,ratesTotal,high))
-            return j;
-   return -1;
-}
-
-void DrawMSSLine(const int idx,const bool bullish,const datetime tPivot,
+void DrawMSSLine(const int idx,const int tfIdx,const bool bullish,const datetime tPivot,
                  const double price,const datetime rightTime,const bool finalBroken)
 {
-   string base="ICTKZ_"+g_key[idx]+"_"+MakeId(g_startTime[idx])+(bullish?"_mssUp":"_mssDn");
+   string base="ICTKZ_"+g_key[idx]+"_"+MakeId(g_startTime[idx])+"_"+g_mssTFname[tfIdx]+(bullish?"_mssUp":"_mssDn");
    string lname=base+"_ln";
    string tname=base+"_tx";
-   datetime t2=rightTime+PeriodSeconds();
+   datetime t2=rightTime;
 
    if(ObjectFind(0,lname)<0)
    {
@@ -490,11 +491,11 @@ void DrawMSSLine(const int idx,const bool bullish,const datetime tPivot,
       ObjectSetDouble (0,lname,OBJPROP_PRICE,1,price);
    }
 
-   // buzilganda: chiziq qattiq (solid) bo'ladi va "MSS" yozuvi qo'yiladi
+   // buzilganda: chiziq qattiq (solid) bo'ladi va "MSS <TF>" yozuvi qo'yiladi
    if(finalBroken)
    {
       ObjectSetInteger(0,lname,OBJPROP_STYLE,STYLE_SOLID);
-      string txt=bullish?"MSS UP":"MSS DN";
+      string txt="MSS "+g_mssTFname[tfIdx]+(bullish?" UP":" DN");
       if(ObjectFind(0,tname)<0)
       {
          ObjectCreate(0,tname,OBJ_TEXT,0,t2,price);
@@ -514,15 +515,15 @@ void DrawMSSLine(const int idx,const bool bullish,const datetime tPivot,
    }
 }
 
-void FireMSSAlert(const int idx,const bool bullish,const datetime t,const double price)
+void FireMSSAlert(const int idx,const int tfIdx,const bool bullish,const datetime t,const double price)
 {
    if(!InpEnableMSSAlert) return;
 
    string dir=bullish?"BULLISH Market Structure Shift":"BEARISH Market Structure Shift";
    string text=StringFormat(
-      "%s [%s]\n%s\n%s\nDaraja: %s   Vaqt: %s",
+      "%s  MSS %s\n%s\n%s\nDaraja: %s   Vaqt: %s",
       _Symbol,
-      EnumToString((ENUM_TIMEFRAMES)Period()),
+      g_mssTFname[tfIdx],
       g_label[idx],
       dir,
       DoubleToString(price,_Digits),TimeToString(t,TIME_DATE|TIME_MINUTES)
@@ -536,50 +537,86 @@ void FireMSSAlert(const int idx,const bool bullish,const datetime t,const double
       SendTelegramMessage(text);
 }
 
-// break dan keyin market structure shift qidirish (joriy timeframe)
-void ProcessMSS(const int idx,const int i,const int ratesTotal,
-                const datetime &time[],const double &high[],const double &low[],
-                const bool allowAlerts)
+// Bitta timeframe uchun: break vaqtidan keyin market structure shift qidirish.
+// bullish=false -> HIGH sweep bo'lgan, swing LOW pastga buzilishini kutamiz (bearish MSS)
+// bullish=true  -> LOW sweep bo'lgan, swing HIGH yuqoriga buzilishini kutamiz (bullish MSS)
+void ProcessMSS_TF(const int idx,const int tfIdx,const bool bullish,const bool allowAlerts)
 {
-   datetime sinceT=g_startTime[idx];
+   if(bullish){ if(!g_mssUpWatch[idx] || g_mssUpDone[idx][tfIdx]) return; }
+   else       { if(!g_mssDnWatch[idx] || g_mssDnDone[idx][tfIdx]) return; }
 
-   // HIGH buzilgan -> bearish MSS: eng oxirgi swing LOW ni pastga buzsa
-   if(g_mssDnWatch[idx] && !g_mssDnDone[idx])
+   datetime sinceT = bullish ? g_loBreakTime[idx] : g_hiBreakTime[idx];
+   if(sinceT<=0) return;
+
+   MqlRates r[];
+   int n=CopyRates(_Symbol,g_mssTF[tfIdx],0,2000,r);
+   if(n<=2*g_sMax+2) return;
+   ArraySetAsSeries(r,false); // eng eski birinchi
+
+   double hi[]; double lo[]; datetime tm[];
+   ArrayResize(hi,n); ArrayResize(lo,n); ArrayResize(tm,n);
+   for(int a=0;a<n;a++){ hi[a]=r[a].high; lo[a]=r[a].low; tm[a]=r[a].time; }
+
+   int start=0;
+   while(start<n && tm[start]<sinceT) start++;
+   if(start>=n) return;
+
+   bool have=false;
+   double pivPrice=0; datetime pivTime=0;
+
+   for(int k=start;k<n;k++)
    {
-      int piv=FindRecentSwingLow(i,sinceT,ratesTotal,time,low);
-      if(piv>=0)
+      // 1) buzilishni tekshiramiz (kuzatilayotgan pivot mavjud bo'lsa)
+      if(have)
       {
-         double P=low[piv];
-         if(low[i]<P)
+         if(!bullish && lo[k]<pivPrice) // bearish MSS
          {
-            DrawMSSLine(idx,false,time[piv],P,time[i],true);
-            g_mssDnDone[idx]=true;
-            g_mssDnWatch[idx]=false;
-            if(allowAlerts)
-               FireMSSAlert(idx,false,time[i],P);
+            DrawMSSLine(idx,tfIdx,false,pivTime,pivPrice,tm[k],true);
+            g_mssDnDone[idx][tfIdx]=true;
+            if(allowAlerts) FireMSSAlert(idx,tfIdx,false,tm[k],pivPrice);
+            return;
+         }
+         if(bullish && hi[k]>pivPrice)  // bullish MSS
+         {
+            DrawMSSLine(idx,tfIdx,true,pivTime,pivPrice,tm[k],true);
+            g_mssUpDone[idx][tfIdx]=true;
+            if(allowAlerts) FireMSSAlert(idx,tfIdx,true,tm[k],pivPrice);
+            return;
+         }
+      }
+
+      // 2) eng oxirgi tasdiqlangan swing ni yangilaymiz (g_sMin dan g_sMax gacha)
+      for(int s=g_sMin;s<=g_sMax;s++)
+      {
+         int c=k-s;
+         if(c-s<0) break;
+         if(!bullish)
+         {
+            if(IsSwingLow(c,s,n,lo)){ pivPrice=lo[c]; pivTime=tm[c]; have=true; break; }
          }
          else
-            DrawMSSLine(idx,false,time[piv],P,time[i],false);
+         {
+            if(IsSwingHigh(c,s,n,hi)){ pivPrice=hi[c]; pivTime=tm[c]; have=true; break; }
+         }
       }
    }
 
-   // LOW buzilgan -> bullish MSS: eng oxirgi swing HIGH ni yuqoriga buzsa
-   if(g_mssUpWatch[idx] && !g_mssUpDone[idx])
+   // hali buzilmadi - kutilayotgan pivot chizig'ini oxirgi barga cho'zamiz
+   if(have)
+      DrawMSSLine(idx,tfIdx,bullish,pivTime,pivPrice,tm[n-1],false);
+}
+
+// barcha kuzatilayotgan sessiyalar uchun M1/M5/M15 da MSS qidirish
+void ProcessAllMSS(const bool allowAlerts)
+{
+   if(!InpEnableMSS) return;
+   for(int idx=0;idx<SESSION_COUNT;idx++)
    {
-      int piv=FindRecentSwingHigh(i,sinceT,ratesTotal,time,high);
-      if(piv>=0)
+      if(!g_enabled[idx]) continue;
+      for(int t=0;t<MSS_TF_COUNT;t++)
       {
-         double P=high[piv];
-         if(high[i]>P)
-         {
-            DrawMSSLine(idx,true,time[piv],P,time[i],true);
-            g_mssUpDone[idx]=true;
-            g_mssUpWatch[idx]=false;
-            if(allowAlerts)
-               FireMSSAlert(idx,true,time[i],P);
-         }
-         else
-            DrawMSSLine(idx,true,time[piv],P,time[i],false);
+         if(g_mssDnWatch[idx]) ProcessMSS_TF(idx,t,false,allowAlerts);
+         if(g_mssUpWatch[idx]) ProcessMSS_TF(idx,t,true, allowAlerts);
       }
    }
 }
@@ -602,8 +639,9 @@ void ProcessSession(const int idx,const int scanStart,const int ratesTotal,
          {
             // yangi sessiya boshlandi - eski kuzatuvlar to'xtaydi
             g_watching[idx]=false;
-            g_mssDnWatch[idx]=false; g_mssDnDone[idx]=false;
-            g_mssUpWatch[idx]=false; g_mssUpDone[idx]=false;
+            g_mssDnWatch[idx]=false; g_mssUpWatch[idx]=false;
+            g_hiBreakTime[idx]=0; g_loBreakTime[idx]=0;
+            for(int t=0;t<MSS_TF_COUNT;t++){ g_mssDnDone[idx][t]=false; g_mssUpDone[idx][t]=false; }
             g_active[idx]=true;
             g_startTime[idx]=time[i];
             g_high[idx]=high[i];
@@ -648,16 +686,18 @@ void ProcessSession(const int idx,const int scanStart,const int ratesTotal,
          if(!g_highBroken[idx] && high[i]>g_watchHigh[idx])
          {
             g_highBroken[idx]=true;
-            // HIGH buzildi -> bearish MSS qidirishni boshlaymiz
-            g_mssDnWatch[idx]=true; g_mssDnDone[idx]=false;
+            // HIGH buzildi -> bearish MSS qidirishni boshlaymiz (barcha TF)
+            g_mssDnWatch[idx]=true; g_hiBreakTime[idx]=time[i];
+            for(int t=0;t<MSS_TF_COUNT;t++) g_mssDnDone[idx][t]=false;
             if(allowAlerts)
                FireBreakoutAlert(idx,true,time[i],high[i]);
          }
          if(!g_lowBroken[idx] && low[i]<g_watchLow[idx])
          {
             g_lowBroken[idx]=true;
-            // LOW buzildi -> bullish MSS qidirishni boshlaymiz
-            g_mssUpWatch[idx]=true; g_mssUpDone[idx]=false;
+            // LOW buzildi -> bullish MSS qidirishni boshlaymiz (barcha TF)
+            g_mssUpWatch[idx]=true; g_loBreakTime[idx]=time[i];
+            for(int t=0;t<MSS_TF_COUNT;t++) g_mssUpDone[idx][t]=false;
             if(allowAlerts)
                FireBreakoutAlert(idx,false,time[i],low[i]);
          }
@@ -665,11 +705,141 @@ void ProcessSession(const int idx,const int scanStart,const int ratesTotal,
          // chiziq buzilmaguncha o'ngga cho'ziladi, buzilgan barda to'xtaydi
          DrawLevel(idx,true,g_watchHigh[idx],time[i],hiWasBroken);
          DrawLevel(idx,false,g_watchLow[idx],time[i],loWasBroken);
-
-         // break dan keyin market structure shift qidirish
-         if(InpEnableMSS)
-            ProcessMSS(idx,i,ratesTotal,time,high,low,allowAlerts);
       }
+   }
+}
+
+//+------------------------------------------------------------------+
+//| Oldingi kun HIGH/LOW (PDH/PDL)                                     |
+//| useNy=false -> broker (terminal) kuni, useNy=true -> Nyu-York kuni |
+//+------------------------------------------------------------------+
+void DrawPrevDayLine(const string id,const bool isHigh,const double price,
+                     const datetime startT,const color clr,const string labelTxt)
+{
+   string lname="ICTKZ_PD_"+id+(isHigh?"_hi":"_lo")+"_ln";
+   string tname="ICTKZ_PD_"+id+(isHigh?"_hi":"_lo")+"_tx";
+
+   if(ObjectFind(0,lname)<0)
+   {
+      ObjectCreate(0,lname,OBJ_TREND,0,startT,price,TimeCurrent(),price);
+      ObjectSetInteger(0,lname,OBJPROP_STYLE,STYLE_DASHDOT);
+      ObjectSetInteger(0,lname,OBJPROP_WIDTH,InpPrevDayWidth);
+      ObjectSetInteger(0,lname,OBJPROP_RAY_LEFT,false);
+      ObjectSetInteger(0,lname,OBJPROP_RAY_RIGHT,true);
+      ObjectSetInteger(0,lname,OBJPROP_SELECTABLE,false);
+      ObjectSetInteger(0,lname,OBJPROP_HIDDEN,true);
+      ObjectSetInteger(0,lname,OBJPROP_BACK,false);
+   }
+   ObjectSetInteger(0,lname,OBJPROP_COLOR,clr);
+   ObjectSetInteger(0,lname,OBJPROP_TIME,0,startT);
+   ObjectSetDouble (0,lname,OBJPROP_PRICE,0,price);
+   ObjectSetInteger(0,lname,OBJPROP_TIME,1,TimeCurrent());
+   ObjectSetDouble (0,lname,OBJPROP_PRICE,1,price);
+
+   if(ObjectFind(0,tname)<0)
+   {
+      ObjectCreate(0,tname,OBJ_TEXT,0,startT,price);
+      ObjectSetString (0,tname,OBJPROP_FONT,"Arial");
+      ObjectSetInteger(0,tname,OBJPROP_FONTSIZE,InpLabelFontSize);
+      ObjectSetInteger(0,tname,OBJPROP_ANCHOR,isHigh?ANCHOR_LEFT_LOWER:ANCHOR_LEFT_UPPER);
+      ObjectSetInteger(0,tname,OBJPROP_SELECTABLE,false);
+      ObjectSetInteger(0,tname,OBJPROP_HIDDEN,true);
+   }
+   ObjectSetString (0,tname,OBJPROP_TEXT,labelTxt);
+   ObjectSetInteger(0,tname,OBJPROP_COLOR,clr);
+   ObjectSetInteger(0,tname,OBJPROP_TIME,0,startT);
+   ObjectSetDouble (0,tname,OBJPROP_PRICE,0,price);
+}
+
+void FirePrevDayAlert(const string zoneName,const bool isHigh,const double price)
+{
+   if(!InpEnablePrevDayAlert) return;
+   string text=StringFormat("%s [%s]\nOldingi kun %s (%s) buzildi\nDaraja: %s",
+      _Symbol,EnumToString((ENUM_TIMEFRAMES)Period()),
+      isHigh?"HIGH":"LOW", zoneName,
+      DoubleToString(price,_Digits));
+   if(InpEnableSoundAlert)
+      PlaySound(InpPrevDaySoundFile);
+   if(InpEnablePopupAlert)
+      Alert(text);
+   if(InpEnableTelegram)
+      SendTelegramMessage(text);
+}
+
+// bitta kun turi (terminal yoki NY) uchun oldingi kun HIGH/LOW ni hisoblaydi,
+// chizadi va narx buzganda alert beradi
+void ProcessPrevDay(const int ratesTotal,const datetime &time[],
+                    const double &high[],const double &low[],const double &close[],
+                    const bool useNy,const bool allowAlerts)
+{
+   if(ratesTotal<2) return;
+
+   datetime nowT=time[ratesTotal-1];
+   datetime nowRef = useNy ? ServerToNewYork(nowT) : nowT;
+   long todayIdx=(long)(nowRef/86400);
+   long prevIdx =todayIdx-1;
+
+   double hi=-DBL_MAX, lo=DBL_MAX; datetime firstT=0; bool found=false;
+   for(int b=ratesTotal-1;b>=0;b--)
+   {
+      datetime tb = useNy ? ServerToNewYork(time[b]) : time[b];
+      long idx=(long)(tb/86400);
+      if(idx==prevIdx)
+      {
+         if(high[b]>hi) hi=high[b];
+         if(low[b]<lo)  lo=low[b];
+         firstT=time[b];
+         found=true;
+      }
+      else if(idx<prevIdx)
+         break;
+   }
+   if(!found) return;
+
+   // kun turi bo'yicha holatni tanlaymiz
+   string id     = useNy ? "NY"   : "TERM";
+   string zone   = useNy ? "NY"   : "Terminal";
+   color  clr    = useNy ? InpPrevDayNyColor : InpPrevDayTermColor;
+   string hiLbl  = useNy ? "PDH (NY)" : "PDH";
+   string loLbl  = useNy ? "PDL (NY)" : "PDL";
+
+   long   prevDay   = useNy ? g_pdNyDay : g_pdTermDay;
+   bool   hiBroken  = useNy ? g_pdNyHiBroken : g_pdTermHiBroken;
+   bool   loBroken  = useNy ? g_pdNyLoBroken : g_pdTermLoBroken;
+
+   // yangi kunga o'tsak - buzilish bayroqlarini yangilaymiz
+   if(prevDay!=prevIdx)
+   {
+      hiBroken=false; loBroken=false;
+      prevDay=prevIdx;
+   }
+
+   DrawPrevDayLine(id,true, hi,firstT,clr,hiLbl);
+   DrawPrevDayLine(id,false,lo,firstT,clr,loLbl);
+
+   // narx buzganda (bir marta) alert
+   double px=close[ratesTotal-1];
+   if(!hiBroken && high[ratesTotal-1]>hi)
+   {
+      hiBroken=true;
+      if(allowAlerts) FirePrevDayAlert(zone,true,hi);
+   }
+   if(!loBroken && low[ratesTotal-1]<lo)
+   {
+      loBroken=true;
+      if(allowAlerts) FirePrevDayAlert(zone,false,lo);
+   }
+
+   // holatni saqlaymiz
+   if(useNy)
+   {
+      g_pdNyHi=hi; g_pdNyLo=lo; g_pdNyStart=firstT; g_pdNyDay=prevDay;
+      g_pdNyHiBroken=hiBroken; g_pdNyLoBroken=loBroken;
+   }
+   else
+   {
+      g_pdTermHi=hi; g_pdTermLo=lo; g_pdTermStart=firstT; g_pdTermDay=prevDay;
+      g_pdTermHiBroken=hiBroken; g_pdTermLoBroken=loBroken;
    }
 }
 
@@ -697,10 +867,12 @@ int OnCalculate(const int rates_total,
          g_highBroken[i]=false;
          g_lowBroken[i]=false;
          g_mssDnWatch[i]=false;
-         g_mssDnDone[i]=false;
          g_mssUpWatch[i]=false;
-         g_mssUpDone[i]=false;
+         g_hiBreakTime[i]=0;
+         g_loBreakTime[i]=0;
+         for(int t=0;t<MSS_TF_COUNT;t++){ g_mssDnDone[i][t]=false; g_mssUpDone[i][t]=false; }
       }
+      g_pdTermDay=-1; g_pdNyDay=-1;
 
       int periodSec=PeriodSeconds();
       int barsPerDay=(periodSec>0)?(int)MathMax(1,86400/periodSec):1;
@@ -715,6 +887,16 @@ int OnCalculate(const int rates_total,
    bool allowAlerts=(prev_calculated>0);
    for(int idx=0; idx<SESSION_COUNT; idx++)
       ProcessSession(idx,scanStart,rates_total,time,high,low,allowAlerts);
+
+   // break dan keyin M1/M5/M15 da market structure shift qidirish
+   ProcessAllMSS(allowAlerts);
+
+   // oldingi kun HIGH/LOW (terminal kuni va Nyu-York kuni)
+   if(InpEnablePrevDay)
+   {
+      ProcessPrevDay(rates_total,time,high,low,close,false,allowAlerts); // terminal
+      ProcessPrevDay(rates_total,time,high,low,close,true, allowAlerts); // Nyu-York
+   }
 
    return(rates_total);
 }
