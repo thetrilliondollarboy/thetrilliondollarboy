@@ -818,7 +818,6 @@ void ProcessPrevDay(const int ratesTotal,const datetime &time[],
    DrawPrevDayLine(id,false,lo,firstT,clr,loLbl);
 
    // narx buzganda (bir marta) alert
-   double px=close[ratesTotal-1];
    if(!hiBroken && high[ratesTotal-1]>hi)
    {
       hiBroken=true;
