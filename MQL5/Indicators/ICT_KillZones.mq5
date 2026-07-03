@@ -117,7 +117,9 @@ bool     g_mssDnWatch[SESSION_COUNT];              // HIGH buzildi -> bearish MS
 bool     g_mssUpWatch[SESSION_COUNT];              // LOW  buzildi -> bullish MSS qidirilyapti
 bool     g_mssDnDone[SESSION_COUNT][MSS_TF_COUNT]; // har TF uchun alohida tugallanish
 bool     g_mssUpDone[SESSION_COUNT][MSS_TF_COUNT];
-datetime g_hiBreakTime[SESSION_COUNT];             // HIGH buzilgan vaqt (MSS shu vaqtdan qidiriladi)
+datetime g_mssDnTime[SESSION_COUNT][MSS_TF_COUNT]; // topilgan MSS vaqti (keyingi TF shu vaqtdan qidiradi)
+datetime g_mssUpTime[SESSION_COUNT][MSS_TF_COUNT];
+datetime g_hiBreakTime[SESSION_COUNT];             // HIGH buzilgan vaqt (M1 MSS shu vaqtdan qidiriladi)
 datetime g_loBreakTime[SESSION_COUNT];             // LOW  buzilgan vaqt
 
 int      g_sMinTf[MSS_TF_COUNT]; // har TF uchun swing MIN barlar (OnInit da)
@@ -176,7 +178,11 @@ int OnInit()
       g_mssUpWatch[i]=false;
       g_hiBreakTime[i]=0;
       g_loBreakTime[i]=0;
-      for(int t=0;t<MSS_TF_COUNT;t++){ g_mssDnDone[i][t]=false; g_mssUpDone[i][t]=false; }
+      for(int t=0;t<MSS_TF_COUNT;t++)
+      {
+         g_mssDnDone[i][t]=false; g_mssUpDone[i][t]=false;
+         g_mssDnTime[i][t]=0;     g_mssUpTime[i][t]=0;
+      }
    }
 
    g_pdTermDay=-1; g_pdNyDay=-1;
@@ -504,7 +510,7 @@ void DrawMSSLine(const int idx,const int tfIdx,const bool bullish,const datetime
    if(finalBroken)
    {
       ObjectSetInteger(0,lname,OBJPROP_STYLE,STYLE_SOLID);
-      string txt=bullish?"MSS UP":"MSS DN";
+      string txt="MSS "+g_mssTFname[tfIdx]+(bullish?" UP":" DN");
       if(ObjectFind(0,tname)<0)
       {
          ObjectCreate(0,tname,OBJ_TEXT,0,t2,price);
@@ -547,15 +553,13 @@ void FireMSSAlert(const int idx,const int tfIdx,const bool bullish,const datetim
       SendTelegramMessage(text);
 }
 
-// Bitta timeframe uchun: break vaqtidan keyin market structure shift qidirish.
+// Bitta timeframe uchun: sinceT vaqtidan keyin market structure shift qidirish.
 // bullish=false -> HIGH sweep bo'lgan, swing LOW pastga buzilishini kutamiz (bearish MSS)
 // bullish=true  -> LOW sweep bo'lgan, swing HIGH yuqoriga buzilishini kutamiz (bullish MSS)
-void ProcessMSS_TF(const int idx,const int tfIdx,const bool bullish,const bool allowAlerts)
+// Topilsa: chizadi, done bayrog'ini va topilgan vaqtni saqlaydi, alert beradi.
+void ProcessMSS_TF(const int idx,const int tfIdx,const bool bullish,
+                   const datetime sinceT,const bool allowAlerts)
 {
-   if(bullish){ if(!g_mssUpWatch[idx] || g_mssUpDone[idx][tfIdx]) return; }
-   else       { if(!g_mssDnWatch[idx] || g_mssDnDone[idx][tfIdx]) return; }
-
-   datetime sinceT = bullish ? g_loBreakTime[idx] : g_hiBreakTime[idx];
    if(sinceT<=0) return;
 
    int sMin=g_sMinTf[tfIdx];  // shu TF ning o'z diapazoni
@@ -586,6 +590,7 @@ void ProcessMSS_TF(const int idx,const int tfIdx,const bool bullish,const bool a
          {
             DrawMSSLine(idx,tfIdx,false,pivTime,pivPrice,tm[k],true);
             g_mssDnDone[idx][tfIdx]=true;
+            g_mssDnTime[idx][tfIdx]=tm[k];
             if(allowAlerts) FireMSSAlert(idx,tfIdx,false,tm[k],pivPrice);
             return;
          }
@@ -593,6 +598,7 @@ void ProcessMSS_TF(const int idx,const int tfIdx,const bool bullish,const bool a
          {
             DrawMSSLine(idx,tfIdx,true,pivTime,pivPrice,tm[k],true);
             g_mssUpDone[idx][tfIdx]=true;
+            g_mssUpTime[idx][tfIdx]=tm[k];
             if(allowAlerts) FireMSSAlert(idx,tfIdx,true,tm[k],pivPrice);
             return;
          }
@@ -620,23 +626,49 @@ void ProcessMSS_TF(const int idx,const int tfIdx,const bool bullish,const bool a
       DrawMSSLine(idx,tfIdx,bullish,pivTime,pivPrice,tm[n-1],false);
 }
 
-// MSS faqat chartning O'Z timeframeda ko'rsatiladi:
-// M1 chartda M1 MSS, M5 chartda M5 MSS, M15 chartda M15 MSS.
-// Boshqa timeframelarda (M1/M5/M15 emas) MSS ko'rsatilmaydi.
+// KASKAD: bitta sessiya/yo'nalish uchun MSS ni M1 -> M5 -> M15 ketma-ketligida
+// qidiradi. M5 faqat M1 topilgach (M1 MSS vaqtidan), M15 faqat M5 topilgach
+// (M5 MSS vaqtidan) qidiriladi. Har TF o'z input diapazonida ishlaydi.
+void CascadeMSS(const int idx,const bool bullish,const bool allowAlerts)
+{
+   bool watch = bullish ? g_mssUpWatch[idx] : g_mssDnWatch[idx];
+   if(!watch) return;
+
+   // 1-bosqich: M1 (break vaqtidan)
+   if(bullish ? !g_mssUpDone[idx][0] : !g_mssDnDone[idx][0])
+   {
+      datetime sinceT = bullish ? g_loBreakTime[idx] : g_hiBreakTime[idx];
+      ProcessMSS_TF(idx,0,bullish,sinceT,allowAlerts);
+      if(bullish ? !g_mssUpDone[idx][0] : !g_mssDnDone[idx][0])
+         return; // M1 hali topilmadi -> M5/M15 kutadi
+   }
+
+   // 2-bosqich: M5 (M1 MSS vaqtidan)
+   if(bullish ? !g_mssUpDone[idx][1] : !g_mssDnDone[idx][1])
+   {
+      datetime sinceT = bullish ? g_mssUpTime[idx][0] : g_mssDnTime[idx][0];
+      ProcessMSS_TF(idx,1,bullish,sinceT,allowAlerts);
+      if(bullish ? !g_mssUpDone[idx][1] : !g_mssDnDone[idx][1])
+         return; // M5 hali topilmadi -> M15 kutadi
+   }
+
+   // 3-bosqich: M15 (M5 MSS vaqtidan)
+   if(bullish ? !g_mssUpDone[idx][2] : !g_mssDnDone[idx][2])
+   {
+      datetime sinceT = bullish ? g_mssUpTime[idx][1] : g_mssDnTime[idx][1];
+      ProcessMSS_TF(idx,2,bullish,sinceT,allowAlerts);
+   }
+}
+
+// barcha kuzatilayotgan sessiyalar uchun MSS kaskadini yuritamiz
 void ProcessAllMSS(const bool allowAlerts)
 {
    if(!InpEnableMSS) return;
-
-   int curTf=-1;
-   for(int t=0;t<MSS_TF_COUNT;t++)
-      if(g_mssTF[t]==(ENUM_TIMEFRAMES)Period()) { curTf=t; break; }
-   if(curTf<0) return; // chart TF M1/M5/M15 emas
-
    for(int idx=0;idx<SESSION_COUNT;idx++)
    {
       if(!g_enabled[idx]) continue;
-      if(g_mssDnWatch[idx]) ProcessMSS_TF(idx,curTf,false,allowAlerts);
-      if(g_mssUpWatch[idx]) ProcessMSS_TF(idx,curTf,true, allowAlerts);
+      CascadeMSS(idx,false,allowAlerts); // HIGH sweep -> bearish kaskad
+      CascadeMSS(idx,true, allowAlerts); // LOW  sweep -> bullish kaskad
    }
 }
 
@@ -660,7 +692,11 @@ void ProcessSession(const int idx,const int scanStart,const int ratesTotal,
             g_watching[idx]=false;
             g_mssDnWatch[idx]=false; g_mssUpWatch[idx]=false;
             g_hiBreakTime[idx]=0; g_loBreakTime[idx]=0;
-            for(int t=0;t<MSS_TF_COUNT;t++){ g_mssDnDone[idx][t]=false; g_mssUpDone[idx][t]=false; }
+            for(int t=0;t<MSS_TF_COUNT;t++)
+            {
+               g_mssDnDone[idx][t]=false; g_mssUpDone[idx][t]=false;
+               g_mssDnTime[idx][t]=0;     g_mssUpTime[idx][t]=0;
+            }
             g_active[idx]=true;
             g_startTime[idx]=time[i];
             g_high[idx]=high[i];
@@ -705,18 +741,18 @@ void ProcessSession(const int idx,const int scanStart,const int ratesTotal,
          if(!g_highBroken[idx] && high[i]>g_watchHigh[idx])
          {
             g_highBroken[idx]=true;
-            // HIGH buzildi -> bearish MSS qidirishni boshlaymiz (barcha TF)
+            // HIGH buzildi -> bearish MSS kaskadini boshlaymiz (M1 -> M5 -> M15)
             g_mssDnWatch[idx]=true; g_hiBreakTime[idx]=time[i];
-            for(int t=0;t<MSS_TF_COUNT;t++) g_mssDnDone[idx][t]=false;
+            for(int t=0;t<MSS_TF_COUNT;t++){ g_mssDnDone[idx][t]=false; g_mssDnTime[idx][t]=0; }
             if(allowAlerts)
                FireBreakoutAlert(idx,true,time[i],high[i]);
          }
          if(!g_lowBroken[idx] && low[i]<g_watchLow[idx])
          {
             g_lowBroken[idx]=true;
-            // LOW buzildi -> bullish MSS qidirishni boshlaymiz (barcha TF)
+            // LOW buzildi -> bullish MSS kaskadini boshlaymiz (M1 -> M5 -> M15)
             g_mssUpWatch[idx]=true; g_loBreakTime[idx]=time[i];
-            for(int t=0;t<MSS_TF_COUNT;t++) g_mssUpDone[idx][t]=false;
+            for(int t=0;t<MSS_TF_COUNT;t++){ g_mssUpDone[idx][t]=false; g_mssUpTime[idx][t]=0; }
             if(allowAlerts)
                FireBreakoutAlert(idx,false,time[i],low[i]);
          }
@@ -891,7 +927,11 @@ int OnCalculate(const int rates_total,
          g_mssUpWatch[i]=false;
          g_hiBreakTime[i]=0;
          g_loBreakTime[i]=0;
-         for(int t=0;t<MSS_TF_COUNT;t++){ g_mssDnDone[i][t]=false; g_mssUpDone[i][t]=false; }
+         for(int t=0;t<MSS_TF_COUNT;t++)
+         {
+            g_mssDnDone[i][t]=false; g_mssUpDone[i][t]=false;
+            g_mssDnTime[i][t]=0;     g_mssUpTime[i][t]=0;
+         }
       }
       g_pdTermDay=-1; g_pdNyDay=-1;
 
