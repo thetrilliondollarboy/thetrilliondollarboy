@@ -880,10 +880,14 @@ void ProcessPrevDay(const int ratesTotal,const datetime &time[],
    bool   hiBroken  = useNy ? g_pdNyHiBroken : g_pdTermHiBroken;
    bool   loBroken  = useNy ? g_pdNyLoBroken : g_pdTermLoBroken;
 
-   // yangi kunga o'tsak - buzilish bayroqlarini yangilaymiz
+   // yangi kunga o'tsak - buzilish bayroqlarini yangilaymiz.
+   // Agar narx YANGI daraja o'rnatilganda allaqachon undan tashqarida bo'lsa,
+   // uni "buzilgan" deb belgilaymiz -> eski/soxta buzilish uchun alert BERILMAYDI.
+   // Alert faqat keyingi HAQIQIY kesishda (bir marta) beriladi.
    if(prevDay!=prevIdx)
    {
-      hiBroken=false; loBroken=false;
+      hiBroken = (high[ratesTotal-1] > hi);
+      loBroken = (low[ratesTotal-1]  < lo);
       prevDay=prevIdx;
    }
 
