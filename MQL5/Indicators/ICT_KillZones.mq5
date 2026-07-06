@@ -824,24 +824,28 @@ void FirePrevDayAlert(const string zoneName,const bool isHigh,const double price
       SendTelegramMessage(text);
 }
 
-// bitta kun turi (terminal yoki NY) uchun oldingi kun HIGH/LOW ni hisoblaydi,
-// chizadi va narx buzganda alert beradi
+// bitta kun turi uchun oldingi kun HIGH/LOW ni hisoblaydi, chizadi va alert beradi.
+// useNy=false -> broker (terminal) kuni, chegara 00:00 server vaqti.
+// useNy=true  -> ICT New York savdo kuni, chegara 17:00 NY (yangi kun 17:00 da boshlanadi).
+//   Buning uchun NY vaqtidan 17 soat ayirib kun indeksini olamiz -> chegara 17:00 ga tushadi.
 void ProcessPrevDay(const int ratesTotal,const datetime &time[],
                     const double &high[],const double &low[],const double &close[],
                     const bool useNy,const bool allowAlerts)
 {
    if(ratesTotal<2) return;
 
+   long shift = useNy ? (long)17*3600 : 0; // ICT: kun 17:00 NY da boshlanadi
+
    datetime nowT=time[ratesTotal-1];
    datetime nowRef = useNy ? ServerToNewYork(nowT) : nowT;
-   long todayIdx=(long)(nowRef/86400);
-   long prevIdx =todayIdx-1;
+   long todayIdx=(long)(((long)nowRef - shift)/86400); // joriy savdo kuni
+   long prevIdx =todayIdx-1;                            // oldingi to'liq tugagan savdo kuni
 
    double hi=-DBL_MAX, lo=DBL_MAX; datetime firstT=0; bool found=false;
    for(int b=ratesTotal-1;b>=0;b--)
    {
       datetime tb = useNy ? ServerToNewYork(time[b]) : time[b];
-      long idx=(long)(tb/86400);
+      long idx=(long)(((long)tb - shift)/86400);
       if(idx==prevIdx)
       {
          if(high[b]>hi) hi=high[b];
