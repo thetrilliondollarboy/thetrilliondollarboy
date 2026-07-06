@@ -839,7 +839,18 @@ void ProcessPrevDay(const int ratesTotal,const datetime &time[],
    datetime nowT=time[ratesTotal-1];
    datetime nowRef = useNy ? ServerToNewYork(nowT) : nowT;
    long todayIdx=(long)(((long)nowRef - shift)/86400); // joriy savdo kuni
-   long prevIdx =todayIdx-1;                            // oldingi to'liq tugagan savdo kuni
+
+   // Oldingi savdo kunini QAT'IY todayIdx-1 deb olmaymiz, chunki dam olish/bayramda
+   // u kun bo'sh (bar yo'q) bo'lishi mumkin. Shu sababli MA'LUMOTI BOR eng oxirgi
+   // oldingi sessiyani topamiz (eng yangi bardan orqaga birinchi idx<todayIdx).
+   long prevIdx=0; bool havePrev=false;
+   for(int b=ratesTotal-1;b>=0;b--)
+   {
+      datetime tb = useNy ? ServerToNewYork(time[b]) : time[b];
+      long idx=(long)(((long)tb - shift)/86400);
+      if(idx<todayIdx){ prevIdx=idx; havePrev=true; break; }
+   }
+   if(!havePrev) return;
 
    double hi=-DBL_MAX, lo=DBL_MAX; datetime firstT=0; bool found=false;
    for(int b=ratesTotal-1;b>=0;b--)
