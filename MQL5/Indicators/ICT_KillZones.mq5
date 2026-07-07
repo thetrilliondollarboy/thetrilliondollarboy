@@ -21,6 +21,14 @@ enum ENUM_STRUCT_LABELPOS
    SLBL_CHART_RIGHT = 2  // Chart o'ng chetida
 };
 
+//--- OTE qidiriladigan timeframe ------------------------------------------
+enum ENUM_OTE_TF
+{
+   OTE_M1  = 0, // M1
+   OTE_M5  = 1, // M5
+   OTE_M15 = 2  // M15
+};
+
 #define SESSION_COUNT 4
 #define SESS_ASIAN        0
 #define SESS_LONDON       1
@@ -95,6 +103,14 @@ input ENUM_LINE_STYLE InpBOSLineStyle  = STYLE_DOT;    // BOS chiziq stili
 input color           InpBOSLabelColor = clrSlateGray; // BOS yozuv rangi
 input int             InpMSSLineWidth  = 2;            // Chiziq qalinligi (MSS/BOS)
 input ENUM_STRUCT_LABELPOS InpStructLabelPos = SLBL_BREAK; // MSS/BOS yozuvi joylashuvi
+
+input group "== OTE (Optimal Trade Entry) - Fibonacci zona =="
+input bool        InpEnableOTE    = true;         // OTE zona chizilsin
+input ENUM_OTE_TF InpOTETimeframe = OTE_M5;       // OTE qidiriladigan TF (shift shu TF da bo'ladi)
+input double      InpOTEFibLow    = 0.62;         // OTE zona chegarasi (fib, shift=0 dan)
+input double      InpOTEFibHigh   = 0.79;         // OTE zona chegarasi (fib, shift=0 dan)
+input color       InpOTEColor     = C'120,80,200'; // OTE zona rangi (boshqacha rang)
+input bool        InpOTEShowLabel = true;         // OTE yozuvi ko'rsatilsin
 
 input group "== Oldingi kun HIGH/LOW (PDH/PDL) =="
 input bool   InpEnablePrevDay      = true;         // Oldingi kun max/min chiziqlari
@@ -715,6 +731,118 @@ void ProcessAllMSS(const bool allowAlerts)
 }
 
 //+------------------------------------------------------------------+
+//| OTE (Optimal Trade Entry) Fibonacci zonasi                        |
+//| sweepP = sweep nuqta (fib 100), shiftP = shift qaytgan nuqta (0). |
+//| Zona = fib InpOTEFibLow .. InpOTEFibHigh oralig'idagi narx bandi.  |
+//+------------------------------------------------------------------+
+void DrawOTEZone(const int idx,const bool bullish,const double sweepP,const double shiftP,const datetime leftT)
+{
+   // fib: 0 -> shiftP, 1.0 (100) -> sweepP
+   double pA = shiftP + InpOTEFibLow *(sweepP-shiftP);
+   double pB = shiftP + InpOTEFibHigh*(sweepP-shiftP);
+   double zHi=MathMax(pA,pB), zLo=MathMin(pA,pB);
+
+   string base="ICTKZ_"+g_key[idx]+"_"+MakeId(g_startTime[idx])+"_OTE_"+(bullish?"up":"dn");
+   string rname=base+"_box";
+   string tname=base+"_tx";
+   datetime t2=TimeCurrent();
+
+   if(ObjectFind(0,rname)<0)
+   {
+      ObjectCreate(0,rname,OBJ_RECTANGLE,0,leftT,zHi,t2,zLo);
+      ObjectSetInteger(0,rname,OBJPROP_STYLE,STYLE_SOLID);
+      ObjectSetInteger(0,rname,OBJPROP_WIDTH,1);
+      ObjectSetInteger(0,rname,OBJPROP_FILL,true);
+      ObjectSetInteger(0,rname,OBJPROP_BACK,true);
+      ObjectSetInteger(0,rname,OBJPROP_SELECTABLE,false);
+      ObjectSetInteger(0,rname,OBJPROP_HIDDEN,true);
+   }
+   ObjectSetInteger(0,rname,OBJPROP_COLOR,InpOTEColor);
+   ObjectSetInteger(0,rname,OBJPROP_TIME,0,leftT); ObjectSetDouble(0,rname,OBJPROP_PRICE,0,zHi);
+   ObjectSetInteger(0,rname,OBJPROP_TIME,1,t2);    ObjectSetDouble(0,rname,OBJPROP_PRICE,1,zLo);
+
+   if(InpOTEShowLabel)
+   {
+      double mid=(zHi+zLo)/2.0;
+      if(ObjectFind(0,tname)<0)
+      {
+         ObjectCreate(0,tname,OBJ_TEXT,0,t2,mid);
+         ObjectSetString (0,tname,OBJPROP_TEXT,"OTE "+g_mssTFname[(int)InpOTETimeframe]);
+         ObjectSetString (0,tname,OBJPROP_FONT,"Arial");
+         ObjectSetInteger(0,tname,OBJPROP_FONTSIZE,InpLabelFontSize);
+         ObjectSetInteger(0,tname,OBJPROP_COLOR,InpOTEColor);
+         ObjectSetInteger(0,tname,OBJPROP_ANCHOR,ANCHOR_RIGHT);
+         ObjectSetInteger(0,tname,OBJPROP_SELECTABLE,false);
+         ObjectSetInteger(0,tname,OBJPROP_HIDDEN,true);
+      }
+      ObjectSetInteger(0,tname,OBJPROP_TIME,0,t2);
+      ObjectSetDouble (0,tname,OBJPROP_PRICE,0,mid);
+   }
+}
+
+// Tanlangan TF da shift (1-MSS) bo'lgach OTE zonasini hisoblab chizadi.
+void ProcessOTE(const int idx)
+{
+   if(!InpEnableOTE) return;
+   int tf=(int)InpOTETimeframe;
+
+   bool bull = g_mssUpWatch[idx] && g_mssUpDone[idx][tf]; // LOW sweep + UP shift
+   bool bear = g_mssDnWatch[idx] && g_mssDnDone[idx][tf]; // HIGH sweep + DOWN shift
+   if(!bull && !bear) return;
+
+   MqlRates r[];
+   int n=CopyRates(_Symbol,g_mssTF[tf],0,2000,r);
+   if(n<=2) return;
+   ArraySetAsSeries(r,false);
+
+   if(bull)
+   {
+      datetime t0=g_loBreakTime[idx], tMss=g_mssUpTime[idx][tf];
+      // sweep LOW = [t0 .. tMss] oralig'idagi eng past low (fib 100)
+      double sweepLow=DBL_MAX; datetime sweepT=t0;
+      for(int a=0;a<n;a++)
+      {
+         if(r[a].time<t0) continue;
+         if(r[a].time>tMss) break;
+         if(r[a].low<sweepLow){ sweepLow=r[a].low; sweepT=r[a].time; }
+      }
+      if(sweepLow==DBL_MAX) return;
+      // impuls HIGH = sweepT dan oxirgi bargacha eng baland high (fib 0)
+      double impHigh=-DBL_MAX;
+      for(int a=0;a<n;a++){ if(r[a].time<sweepT) continue; if(r[a].high>impHigh) impHigh=r[a].high; }
+      if(impHigh==-DBL_MAX) return;
+      DrawOTEZone(idx,true,sweepLow,impHigh,sweepT);
+   }
+
+   if(bear)
+   {
+      datetime t0=g_hiBreakTime[idx], tMss=g_mssDnTime[idx][tf];
+      double sweepHigh=-DBL_MAX; datetime sweepT=t0;
+      for(int a=0;a<n;a++)
+      {
+         if(r[a].time<t0) continue;
+         if(r[a].time>tMss) break;
+         if(r[a].high>sweepHigh){ sweepHigh=r[a].high; sweepT=r[a].time; }
+      }
+      if(sweepHigh==-DBL_MAX) return;
+      double impLow=DBL_MAX;
+      for(int a=0;a<n;a++){ if(r[a].time<sweepT) continue; if(r[a].low<impLow) impLow=r[a].low; }
+      if(impLow==DBL_MAX) return;
+      DrawOTEZone(idx,false,sweepHigh,impLow,sweepT);
+   }
+}
+
+void ProcessAllOTE()
+{
+   if(!InpEnableOTE) return;
+   for(int idx=0;idx<SESSION_COUNT;idx++)
+   {
+      if(!g_enabled[idx]) continue;
+      ProcessOTE(idx);
+   }
+}
+
+//+------------------------------------------------------------------+
 void ProcessSession(const int idx,const int scanStart,const int ratesTotal,
                      const datetime &time[],const double &high[],const double &low[],
                      const bool allowAlerts)
@@ -1014,6 +1142,9 @@ int OnCalculate(const int rates_total,
 
    // break dan keyin M1/M5/M15 da market structure shift qidirish
    ProcessAllMSS(allowAlerts);
+
+   // tanlangan TF da shift bo'lgach OTE (Fibonacci) zonasi
+   ProcessAllOTE();
 
    // oldingi kun HIGH/LOW (terminal kuni va Nyu-York kuni)
    if(InpEnablePrevDay)
