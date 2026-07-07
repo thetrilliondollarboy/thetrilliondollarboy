@@ -104,13 +104,18 @@ input color           InpBOSLabelColor = clrSlateGray; // BOS yozuv rangi
 input int             InpMSSLineWidth  = 2;            // Chiziq qalinligi (MSS/BOS)
 input ENUM_STRUCT_LABELPOS InpStructLabelPos = SLBL_BREAK; // MSS/BOS yozuvi joylashuvi
 
-input group "== OTE (Optimal Trade Entry) - Fibonacci zona =="
-input bool        InpEnableOTE    = true;         // OTE zona chizilsin
-input ENUM_OTE_TF InpOTETimeframe = OTE_M5;       // OTE qidiriladigan TF (shift shu TF da bo'ladi)
-input double      InpOTEFibLow    = 0.62;         // OTE zona chegarasi (fib, shift=0 dan)
-input double      InpOTEFibHigh   = 0.79;         // OTE zona chegarasi (fib, shift=0 dan)
-input color       InpOTEColor     = C'120,80,200'; // OTE zona rangi (boshqacha rang)
-input bool        InpOTEShowLabel = true;         // OTE yozuvi ko'rsatilsin
+input group "== OTE (Optimal Trade Entry) + Target zona =="
+input bool        InpEnableOTE     = true;          // OTE + setup chizilsin
+input ENUM_OTE_TF InpOTETimeframe  = OTE_M5;        // OTE qidiriladigan TF (shift shu TF da bo'ladi)
+input double      InpOTEFibLow     = 0.618;         // OTE band pastki fib
+input double      InpOTEFibHigh    = 0.786;         // OTE band yuqori fib
+input color       InpOTEColor      = C'235,170,185'; // OTE band rangi (pushti)
+input bool        InpOTEShowFib    = true;          // Fib darajalari (0/0.5/0.618/0.786/1) chizilsin
+input color       InpOTEFibColor   = clrGray;       // Fib chiziqlari rangi
+input bool        InpOTEShowLabel  = true;          // OTE yozuvi ko'rsatilsin
+input bool        InpOTEShowTarget = true;          // Target zona (qarama-qarshi likvidlik) chizilsin
+input color       InpOTETargetColor= C'150,215,180'; // Target zona rangi (yashil)
+input bool        InpOTEShowRR     = true;          // R (reward) ko'rsatilsin
 
 input group "== Oldingi kun HIGH/LOW (PDH/PDL) =="
 input bool   InpEnablePrevDay      = true;         // Oldingi kun max/min chiziqlari
@@ -730,53 +735,133 @@ void ProcessAllMSS(const bool allowAlerts)
    }
 }
 
-//+------------------------------------------------------------------+
-//| OTE (Optimal Trade Entry) Fibonacci zonasi                        |
-//| sweepP = sweep nuqta (fib 100), shiftP = shift qaytgan nuqta (0). |
-//| Zona = fib InpOTEFibLow .. InpOTEFibHigh oralig'idagi narx bandi.  |
-//+------------------------------------------------------------------+
-void DrawOTEZone(const int idx,const bool bullish,const double sweepP,const double shiftP,const datetime leftT)
+//--- kichik yordamchi: to'ldirilgan to'rtburchak (zona) ---------------------
+void UpsertBox(const string name,const datetime t1,const double p1,const datetime t2,const double p2,
+               const color clr,const bool back)
 {
-   // fib: 0 -> shiftP, 1.0 (100) -> sweepP
-   double pA = shiftP + InpOTEFibLow *(sweepP-shiftP);
-   double pB = shiftP + InpOTEFibHigh*(sweepP-shiftP);
-   double zHi=MathMax(pA,pB), zLo=MathMin(pA,pB);
+   if(ObjectFind(0,name)<0)
+   {
+      ObjectCreate(0,name,OBJ_RECTANGLE,0,t1,p1,t2,p2);
+      ObjectSetInteger(0,name,OBJPROP_STYLE,STYLE_SOLID);
+      ObjectSetInteger(0,name,OBJPROP_WIDTH,1);
+      ObjectSetInteger(0,name,OBJPROP_FILL,true);
+      ObjectSetInteger(0,name,OBJPROP_BACK,back);
+      ObjectSetInteger(0,name,OBJPROP_SELECTABLE,false);
+      ObjectSetInteger(0,name,OBJPROP_HIDDEN,true);
+   }
+   ObjectSetInteger(0,name,OBJPROP_COLOR,clr);
+   ObjectSetInteger(0,name,OBJPROP_TIME,0,t1); ObjectSetDouble(0,name,OBJPROP_PRICE,0,p1);
+   ObjectSetInteger(0,name,OBJPROP_TIME,1,t2); ObjectSetDouble(0,name,OBJPROP_PRICE,1,p2);
+}
 
-   string base="ICTKZ_"+g_key[idx]+"_"+MakeId(g_startTime[idx])+"_OTE_"+(bullish?"up":"dn");
-   string rname=base+"_box";
-   string tname=base+"_tx";
+//--- kichik yordamchi: gorizontal fib segment + o'ngda kichik yozuv ---------
+void UpsertFibLine(const string name,const datetime t1,const datetime t2,const double price,
+                   const color clr,const string lbl)
+{
+   if(ObjectFind(0,name)<0)
+   {
+      ObjectCreate(0,name,OBJ_TREND,0,t1,price,t2,price);
+      ObjectSetInteger(0,name,OBJPROP_STYLE,STYLE_DOT);
+      ObjectSetInteger(0,name,OBJPROP_WIDTH,1);
+      ObjectSetInteger(0,name,OBJPROP_RAY_LEFT,false);
+      ObjectSetInteger(0,name,OBJPROP_RAY_RIGHT,false);
+      ObjectSetInteger(0,name,OBJPROP_SELECTABLE,false);
+      ObjectSetInteger(0,name,OBJPROP_HIDDEN,true);
+      ObjectSetInteger(0,name,OBJPROP_BACK,false);
+   }
+   ObjectSetInteger(0,name,OBJPROP_COLOR,clr);
+   ObjectSetInteger(0,name,OBJPROP_TIME,0,t1); ObjectSetDouble(0,name,OBJPROP_PRICE,0,price);
+   ObjectSetInteger(0,name,OBJPROP_TIME,1,t2); ObjectSetDouble(0,name,OBJPROP_PRICE,1,price);
+
+   string tn=name+"_l";
+   if(ObjectFind(0,tn)<0)
+   {
+      ObjectCreate(0,tn,OBJ_TEXT,0,t2,price);
+      ObjectSetString (0,tn,OBJPROP_FONT,"Arial");
+      ObjectSetInteger(0,tn,OBJPROP_FONTSIZE,InpLabelFontSize-1);
+      ObjectSetInteger(0,tn,OBJPROP_ANCHOR,ANCHOR_LEFT);
+      ObjectSetInteger(0,tn,OBJPROP_SELECTABLE,false);
+      ObjectSetInteger(0,tn,OBJPROP_HIDDEN,true);
+   }
+   ObjectSetString (0,tn,OBJPROP_TEXT,lbl);
+   ObjectSetInteger(0,tn,OBJPROP_COLOR,clr);
+   ObjectSetInteger(0,tn,OBJPROP_TIME,0,t2); ObjectSetDouble(0,tn,OBJPROP_PRICE,0,price);
+}
+
+//+------------------------------------------------------------------+
+//| OTE + Target setup (ICT ping-pong):                               |
+//|  fib 0 -> shiftP (impuls chekkasi), 1.0 -> sweepP (sweep chekkasi)|
+//|  OTE band = 0.618..0.786 (pushti). Target = qarama-qarshi         |
+//|  likvidlik (Asia Low/High) gacha yashil zona + R ko'rsatkichi.    |
+//+------------------------------------------------------------------+
+void DrawOTESetup(const int idx,const bool bullish,const double sweepP,const double shiftP,
+                  const datetime leftT,const double targetP)
+{
+   double rng = sweepP - shiftP;
+   double lFibLo = shiftP + InpOTEFibLow *rng;
+   double lFibHi = shiftP + InpOTEFibHigh*rng;
+   double zHi=MathMax(lFibLo,lFibHi), zLo=MathMin(lFibLo,lFibHi);
+   double entry=(lFibLo+lFibHi)/2.0; // OTE o'rtasi
    datetime t2=TimeCurrent();
 
-   if(ObjectFind(0,rname)<0)
-   {
-      ObjectCreate(0,rname,OBJ_RECTANGLE,0,leftT,zHi,t2,zLo);
-      ObjectSetInteger(0,rname,OBJPROP_STYLE,STYLE_SOLID);
-      ObjectSetInteger(0,rname,OBJPROP_WIDTH,1);
-      ObjectSetInteger(0,rname,OBJPROP_FILL,true);
-      ObjectSetInteger(0,rname,OBJPROP_BACK,true);
-      ObjectSetInteger(0,rname,OBJPROP_SELECTABLE,false);
-      ObjectSetInteger(0,rname,OBJPROP_HIDDEN,true);
-   }
-   ObjectSetInteger(0,rname,OBJPROP_COLOR,InpOTEColor);
-   ObjectSetInteger(0,rname,OBJPROP_TIME,0,leftT); ObjectSetDouble(0,rname,OBJPROP_PRICE,0,zHi);
-   ObjectSetInteger(0,rname,OBJPROP_TIME,1,t2);    ObjectSetDouble(0,rname,OBJPROP_PRICE,1,zLo);
+   string base="ICTKZ_"+g_key[idx]+"_"+MakeId(g_startTime[idx])+"_OTE_"+(bullish?"up":"dn");
 
+   // 1) Target zona (entry dan qarama-qarshi likvidlikgacha) - yashil
+   if(InpOTEShowTarget)
+      UpsertBox(base+"_tgt",leftT,entry,t2,targetP,InpOTETargetColor,true);
+
+   // 2) OTE band (pushti) - target ustidan chiziladi
+   UpsertBox(base+"_ote",leftT,zHi,t2,zLo,InpOTEColor,true);
+
+   // 3) Fib darajalari
+   if(InpOTEShowFib)
+   {
+      UpsertFibLine(base+"_f0",  leftT,t2, shiftP,            InpOTEFibColor, "0");
+      UpsertFibLine(base+"_f50", leftT,t2, shiftP+0.5*rng,    InpOTEFibColor, "0.5");
+      UpsertFibLine(base+"_f62", leftT,t2, lFibLo,            InpOTEFibColor, DoubleToString(InpOTEFibLow,3));
+      UpsertFibLine(base+"_f78", leftT,t2, lFibHi,            InpOTEFibColor, DoubleToString(InpOTEFibHigh,3));
+      UpsertFibLine(base+"_f100",leftT,t2, sweepP,            InpOTEFibColor, "1");
+   }
+
+   // 4) OTE yozuvi
    if(InpOTEShowLabel)
    {
+      string tname=base+"_tx";
       double mid=(zHi+zLo)/2.0;
       if(ObjectFind(0,tname)<0)
       {
          ObjectCreate(0,tname,OBJ_TEXT,0,t2,mid);
-         ObjectSetString (0,tname,OBJPROP_TEXT,"OTE "+g_mssTFname[(int)InpOTETimeframe]);
          ObjectSetString (0,tname,OBJPROP_FONT,"Arial");
          ObjectSetInteger(0,tname,OBJPROP_FONTSIZE,InpLabelFontSize);
-         ObjectSetInteger(0,tname,OBJPROP_COLOR,InpOTEColor);
          ObjectSetInteger(0,tname,OBJPROP_ANCHOR,ANCHOR_RIGHT);
          ObjectSetInteger(0,tname,OBJPROP_SELECTABLE,false);
          ObjectSetInteger(0,tname,OBJPROP_HIDDEN,true);
       }
+      ObjectSetString (0,tname,OBJPROP_TEXT,"OTE "+g_mssTFname[(int)InpOTETimeframe]);
+      ObjectSetInteger(0,tname,OBJPROP_COLOR,InpOTEColor);
       ObjectSetInteger(0,tname,OBJPROP_TIME,0,t2);
       ObjectSetDouble (0,tname,OBJPROP_PRICE,0,mid);
+   }
+
+   // 5) R (reward) ko'rsatkichi: stop=sweep chekkasi, entry=OTE o'rtasi, target=likvidlik
+   if(InpOTEShowRR)
+   {
+      double risk=MathAbs(sweepP-entry);
+      double rr=(risk>0)?MathAbs(targetP-entry)/risk:0;
+      string rname=base+"_rr";
+      if(ObjectFind(0,rname)<0)
+      {
+         ObjectCreate(0,rname,OBJ_TEXT,0,t2,targetP);
+         ObjectSetString (0,rname,OBJPROP_FONT,"Arial Black");
+         ObjectSetInteger(0,rname,OBJPROP_FONTSIZE,InpLabelFontSize);
+         ObjectSetInteger(0,rname,OBJPROP_ANCHOR,ANCHOR_LEFT);
+         ObjectSetInteger(0,rname,OBJPROP_SELECTABLE,false);
+         ObjectSetInteger(0,rname,OBJPROP_HIDDEN,true);
+      }
+      ObjectSetString (0,rname,OBJPROP_TEXT,StringFormat("%.1fR",rr));
+      ObjectSetInteger(0,rname,OBJPROP_COLOR,InpOTETargetColor);
+      ObjectSetInteger(0,rname,OBJPROP_TIME,0,t2);
+      ObjectSetDouble (0,rname,OBJPROP_PRICE,0,targetP);
    }
 }
 
@@ -811,7 +896,7 @@ void ProcessOTE(const int idx)
       double impHigh=-DBL_MAX;
       for(int a=0;a<n;a++){ if(r[a].time<sweepT) continue; if(r[a].high>impHigh) impHigh=r[a].high; }
       if(impHigh==-DBL_MAX) return;
-      DrawOTEZone(idx,true,sweepLow,impHigh,sweepT);
+      DrawOTESetup(idx,true,sweepLow,impHigh,sweepT,g_watchHigh[idx]);
    }
 
    if(bear)
@@ -828,7 +913,7 @@ void ProcessOTE(const int idx)
       double impLow=DBL_MAX;
       for(int a=0;a<n;a++){ if(r[a].time<sweepT) continue; if(r[a].low<impLow) impLow=r[a].low; }
       if(impLow==DBL_MAX) return;
-      DrawOTEZone(idx,false,sweepHigh,impLow,sweepT);
+      DrawOTESetup(idx,false,sweepHigh,impLow,sweepT,g_watchLow[idx]);
    }
 }
 
