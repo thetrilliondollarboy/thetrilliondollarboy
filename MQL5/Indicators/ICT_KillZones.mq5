@@ -115,7 +115,6 @@ input color       InpOTEFibColor   = clrGray;       // Fib chiziqlari rangi
 input bool        InpOTEShowLabel  = true;          // OTE yozuvi ko'rsatilsin
 input bool        InpOTEShowTarget = true;          // Target zona (qarama-qarshi likvidlik) chizilsin
 input color       InpOTETargetColor= C'150,215,180'; // Target zona rangi (yashil)
-input bool        InpOTEShowRR     = true;          // R (reward) ko'rsatilsin
 
 input group "== Oldingi kun HIGH/LOW (PDH/PDL) =="
 input bool   InpEnablePrevDay      = true;         // Oldingi kun max/min chiziqlari
@@ -761,15 +760,16 @@ void UpsertFibLine(const string name,const datetime t1,const datetime t2,const d
    if(ObjectFind(0,name)<0)
    {
       ObjectCreate(0,name,OBJ_TREND,0,t1,price,t2,price);
-      ObjectSetInteger(0,name,OBJPROP_STYLE,STYLE_DOT);
+      ObjectSetInteger(0,name,OBJPROP_STYLE,STYLE_SOLID); // aniq ko'rinishi uchun to'liq chiziq
       ObjectSetInteger(0,name,OBJPROP_WIDTH,1);
       ObjectSetInteger(0,name,OBJPROP_RAY_LEFT,false);
       ObjectSetInteger(0,name,OBJPROP_RAY_RIGHT,false);
       ObjectSetInteger(0,name,OBJPROP_SELECTABLE,false);
       ObjectSetInteger(0,name,OBJPROP_HIDDEN,true);
-      ObjectSetInteger(0,name,OBJPROP_BACK,false);
+      ObjectSetInteger(0,name,OBJPROP_BACK,false); // barlar ustidan - yaxshi ko'rinadi
    }
    ObjectSetInteger(0,name,OBJPROP_COLOR,clr);
+   ObjectSetInteger(0,name,OBJPROP_STYLE,STYLE_SOLID);
    ObjectSetInteger(0,name,OBJPROP_TIME,0,t1); ObjectSetDouble(0,name,OBJPROP_PRICE,0,price);
    ObjectSetInteger(0,name,OBJPROP_TIME,1,t2); ObjectSetDouble(0,name,OBJPROP_PRICE,1,price);
 
@@ -841,27 +841,6 @@ void DrawOTESetup(const int idx,const bool bullish,const double sweepP,const dou
       ObjectSetInteger(0,tname,OBJPROP_COLOR,InpOTEColor);
       ObjectSetInteger(0,tname,OBJPROP_TIME,0,t2);
       ObjectSetDouble (0,tname,OBJPROP_PRICE,0,mid);
-   }
-
-   // 5) R (reward) ko'rsatkichi: stop=sweep chekkasi, entry=OTE o'rtasi, target=likvidlik
-   if(InpOTEShowRR)
-   {
-      double risk=MathAbs(sweepP-entry);
-      double rr=(risk>0)?MathAbs(targetP-entry)/risk:0;
-      string rname=base+"_rr";
-      if(ObjectFind(0,rname)<0)
-      {
-         ObjectCreate(0,rname,OBJ_TEXT,0,t2,targetP);
-         ObjectSetString (0,rname,OBJPROP_FONT,"Arial Black");
-         ObjectSetInteger(0,rname,OBJPROP_FONTSIZE,InpLabelFontSize);
-         ObjectSetInteger(0,rname,OBJPROP_ANCHOR,ANCHOR_LEFT);
-         ObjectSetInteger(0,rname,OBJPROP_SELECTABLE,false);
-         ObjectSetInteger(0,rname,OBJPROP_HIDDEN,true);
-      }
-      ObjectSetString (0,rname,OBJPROP_TEXT,StringFormat("%.1fR",rr));
-      ObjectSetInteger(0,rname,OBJPROP_COLOR,InpOTETargetColor);
-      ObjectSetInteger(0,rname,OBJPROP_TIME,0,t2);
-      ObjectSetDouble (0,rname,OBJPROP_PRICE,0,targetP);
    }
 }
 
