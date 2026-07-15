@@ -58,6 +58,19 @@ input int  InpMaxTFMinutes   = 30;   // Killzone'lar shu daqiqagacha bo'lgan TF 
 input bool InpBackgroundFill = true; // Killzone fonini bo'yash (yarim shaffof)
 
 //+------------------------------------------------------------------+
+//| INPUT — Alertlar (Ogohlantirishlar)                             |
+//+------------------------------------------------------------------+
+input group "════════ ALERTLAR ════════"
+input bool InpAlertsOn     = true;   // Alertlar yoqilgan
+input bool InpAlertPopup   = true;   // Ekranda popup (Alert)
+input bool InpAlertPush    = false;  // Telefon push-bildirishnoma
+input bool InpAlertSound   = true;   // Ovozli signal (alert.wav)
+input bool InpAlertKZStart = true;   // Killzone boshlanishida alert
+input bool InpAlertFVG     = true;   // Yangi FVG paydo bo'lganda
+input bool InpAlertOB      = true;   // Yangi Order/Breaker Block paydo bo'lganda
+input bool InpAlertMSS     = true;   // Yangi MSS paydo bo'lganda
+
+//+------------------------------------------------------------------+
 //| INPUT — Killzones                                                 |
 //+------------------------------------------------------------------+
 input group "════════ KILLZONES ════════"
@@ -316,10 +329,20 @@ void SetText(const string name, datetime t, double p, const string txt, color cl
   }
 
 //+------------------------------------------------------------------+
-//| Bufer-massivlar (rebuild davomida to'ldiriladi)                  |
+//| Global: alert hisoblashlarga ruxsat (tarixiy spam oldini oladi)  |
 //+------------------------------------------------------------------+
-// Killzone sessiya ma'lumotlari
-struct SessionInfo { datetime t1; datetime t2; double hi; double lo; int zone; };
+bool g_allowAlerts = false;
+
+//+------------------------------------------------------------------+
+//| Alert yuborish                                                   |
+//+------------------------------------------------------------------+
+void FireAlert(const string msg)
+  {
+   if(!InpAlertsOn || !g_allowAlerts) return;
+   if(InpAlertPopup) Alert(_Symbol, " ", msg);
+   if(InpAlertPush)  SendNotification(_Symbol + " " + msg);
+   if(InpAlertSound) PlaySound("alert.wav");
+  }
 
 //+------------------------------------------------------------------+
 //| Asosiy hisoblash                                                 |
@@ -349,6 +372,8 @@ int OnCalculate(const int rates_total,
    bool newBar = (rates_total != lastRates);
    if(!newBar && prev_calculated > 0)
       return(rates_total);
+   // Birinchi to'liq hisoblashda (tarix) alert bermaymiz — faqat jonli barlarda.
+   g_allowAlerts = (prev_calculated > 0);
    lastRates = rates_total;
 
    ObjectsDeleteAll(0, OBJ_PREFIX);
@@ -406,9 +431,9 @@ void BuildKillzones(const int rates_total, const int startIdx, const datetime ri
   {
    datetime sKey[KZ_COUNT], sT1[KZ_COUNT];
    double   sHi[KZ_COUNT], sLo[KZ_COUNT];
-   int      sCnt[KZ_COUNT], sIdx1[KZ_COUNT];
+   int      sCnt[KZ_COUNT];
    bool     sAct[KZ_COUNT];
-   for(int z=0;z<KZ_COUNT;z++){ sKey[z]=0; sT1[z]=0; sHi[z]=-DBL_MAX; sLo[z]=DBL_MAX; sCnt[z]=0; sAct[z]=false; sIdx1[z]=0; }
+   for(int z=0;z<KZ_COUNT;z++){ sKey[z]=0; sT1[z]=0; sHi[z]=-DBL_MAX; sLo[z]=DBL_MAX; sCnt[z]=0; sAct[z]=false; }
 
    for(int i=startIdx; i<rates_total; i++)
      {
@@ -424,7 +449,9 @@ void BuildKillzones(const int rates_total, const int startIdx, const datetime ri
             if(!sAct[z] || key != sKey[z])
               {
                sAct[z]=true; sKey[z]=DayStart(time[i]); sT1[z]=time[i];
-               sHi[z]=high[i]; sLo[z]=low[i]; sIdx1[z]=i; sCnt[z]++;
+               sHi[z]=high[i]; sLo[z]=low[i]; sCnt[z]++;
+               if(InpAlertKZStart && i==rates_total-1)
+                  FireAlert(Zones[z].name + " killzone boshlandi");
               }
             else
               {
@@ -573,6 +600,8 @@ void BuildFVG(const int rates_total, const int startIdx, const datetime rightEdg
       SetRectangle(base+"box", time[i-2], top, endT, bot, c, true, 1);
       if(InpFVG_Text)
          SetText(base+"lbl", time[i-2], (top+bot)/2.0, "FVG ", c, ANCHOR_RIGHT, 7);
+      if(InpAlertFVG && i==rates_total-1)
+         FireAlert((bull?"Bullish":"Bearish") + " FVG - " + Zones[zone].name);
       shownPerZone[zone]++;
      }
   }
@@ -629,7 +658,9 @@ void BuildOrderBlocks(const int rates_total, const int startIdx, const datetime 
             if(zone>=0 && (InpOB_Display==DISP_ALL || shownPerZone[zone]==0))
               {
                DrawBlock(cnt++, ob, i, time, open, high, low, close, rates_total,
-                         rightEdge, true, false);
+                         rightEdge, true);
+               if(InpAlertOB && i==rates_total-1)
+                  FireAlert("Bullish Order Block - " + Zones[zone].name);
                shownPerZone[zone]++;
               }
            }
@@ -647,7 +678,9 @@ void BuildOrderBlocks(const int rates_total, const int startIdx, const datetime 
             if(zone>=0 && (InpOB_Display==DISP_ALL || shownPerZone[zone]==0))
               {
                DrawBlock(cnt++, ob, i, time, open, high, low, close, rates_total,
-                         rightEdge, false, false);
+                         rightEdge, false);
+               if(InpAlertOB && i==rates_total-1)
+                  FireAlert("Bearish Order Block - " + Zones[zone].name);
                shownPerZone[zone]++;
               }
            }
@@ -678,7 +711,7 @@ int FindLastBullish(const int from, const int to, const double &open[], const do
 void DrawBlock(const int cnt, const int ob, const int bosIdx,
                const datetime &time[], const double &open[], const double &high[],
                const double &low[], const double &close[], const int rates_total,
-               const datetime rightEdge, const bool bullish, const bool dummy)
+               const datetime rightEdge, const bool bullish)
   {
    double top = InpOB_UseBody ? MathMax(open[ob],close[ob]) : high[ob];
    double bot = InpOB_UseBody ? MathMin(open[ob],close[ob]) : low[ob];
@@ -737,6 +770,8 @@ void BuildMSS(const int rates_total, const int startIdx,
          if(zone>=0 && (InpMSS_Display==DISP_ALL || shownPerZone[zone]==0))
            {
             DrawMSS(cnt++, lastPHidx, i, lastPH, time, true);
+            if(InpAlertMSS && i==rates_total-1)
+               FireAlert("Bullish MSS - " + Zones[zone].name);
             shownPerZone[zone]++;
            }
          trend=1; lastPHidx=-1;
@@ -748,6 +783,8 @@ void BuildMSS(const int rates_total, const int startIdx,
          if(zone>=0 && (InpMSS_Display==DISP_ALL || shownPerZone[zone]==0))
            {
             DrawMSS(cnt++, lastPLidx, i, lastPL, time, false);
+            if(InpAlertMSS && i==rates_total-1)
+               FireAlert("Bearish MSS - " + Zones[zone].name);
             shownPerZone[zone]++;
            }
          trend=-1; lastPLidx=-1;
