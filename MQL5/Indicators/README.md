@@ -37,6 +37,15 @@ Barcha sozlamalar va izohlar **o'zbek tilida**.
 - Mitigatsiya qilinganlarni o'chirish / o'ngga cho'zish
 - Bullish/Bearish imbalans ranglari
 
+### 5. CRT (Candle Range Theory)
+- Yuqori timeframe (HTF) **range candle**'ini aniqlaydi
+- **Manipulation candle** diapazon low/high'ini **sweep** qilib qaytadan
+  ichkariga yopilishini topadi (**TBS — Turtle Body Soup**)
+- **Diapazon qutisi** + **0% / 50% / 100%** darajalari
+- Bullish/Bearish CRT ranglari, TBS sweep belgisi, "CRT" yorlig'i
+- Faqat killzone ichidagilarini ko'rsatish opsiyasi
+- Yangi CRT modelida alert
+
 ### Qo'shimcha
 - **Dashboard** — har sessiyaning FAOL/yopiq holati
 - **Ko'rsatish rejimi** (har bo'lim uchun): Birinchisi / Barchasi / O'chirilgan

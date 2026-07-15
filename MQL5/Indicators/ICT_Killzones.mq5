@@ -155,6 +155,23 @@ input color  InpFVG_Bear     = C'70,25,25';        // Bearish imbalans rangi
 input bool   InpFVG_Text     = true;               // FVG matnini ko'rsatish
 
 //+------------------------------------------------------------------+
+//| INPUT — CRT (Candle Range Theory)                               |
+//+------------------------------------------------------------------+
+input group "════════ CRT (Candle Range Theory) ════════"
+input bool            InpCRT_On        = true;       // CRT modellarini aniqlash — yoqilgan
+input ENUM_TIMEFRAMES InpCRT_TF        = PERIOD_H1;  // Range candle timeframe (HTF)
+input bool            InpCRT_Range     = true;       // Diapazon (range) qutisini ko'rsatish
+input bool            InpCRT_Show50    = true;       // 50% (equilibrium) chizig'i
+input bool            InpCRT_Show100   = true;       // 0% / 100% (past/tepa) chiziqlari
+input bool            InpCRT_ShowTBS   = true;       // TBS (Turtle Body Soup) sweep belgisi
+input int             InpCRT_ExtendTF  = 3;          // Diapazonni necha HTF sham o'ngga cho'zish
+input bool            InpCRT_OnlyKZ    = false;      // Faqat killzone ichidagilarini ko'rsatish
+input color           InpCRT_BullColor = C'30,90,160';  // Bullish CRT rangi
+input color           InpCRT_BearColor = C'160,50,40';  // Bearish CRT rangi
+input bool            InpCRT_Text      = true;       // "CRT" matnini ko'rsatish
+input bool            InpAlertCRT      = true;       // Yangi CRT modelida alert
+
+//+------------------------------------------------------------------+
 //| INPUT — Dashboard (Jadval)                                       |
 //+------------------------------------------------------------------+
 input group "════════ DASHBOARD ════════"
@@ -415,7 +432,11 @@ int OnCalculate(const int rates_total,
    if(InpMSS_On && InpMSS_Display != DISP_OFF)
       BuildMSS(rates_total, startIdx, time, high, low, close);
 
-   // 6) DASHBOARD ------------------------------------------------------
+   // 6) CRT (Candle Range Theory) -------------------------------------
+   if(InpCRT_On)
+      BuildCRT(time[startIdx], rightEdge);
+
+   // 7) DASHBOARD ------------------------------------------------------
    if(InpDashOn)
       UpdateDashboard();
 
@@ -806,7 +827,101 @@ void DrawMSS(const int cnt, const int pivIdx, const int breakIdx, const double l
   }
 
 //+------------------------------------------------------------------+
-//| 6) DASHBOARD                                                    |
+//| 6) CRT — Candle Range Theory                                    |
+//|                                                                 |
+//|  HTF (InpCRT_TF) shamlaridan foydalanadi:                       |
+//|   - Range candle (i-1): diapazonni (high/low) belgilaydi        |
+//|   - Manipulation candle (i): diapazon low/high ni sweep qilib   |
+//|     (likvidlik olib), qaytadan diapazon ichiga yopiladi = TBS   |
+//|   Bullish CRT: low[i] < low[i-1] & close[i] diapazon ichida     |
+//|   Bearish CRT: high[i] > high[i-1] & close[i] diapazon ichida   |
+//+------------------------------------------------------------------+
+void BuildCRT(const datetime leftTime, const datetime rightEdge)
+  {
+   MqlRates r[];
+   ArraySetAsSeries(r, false);
+   int copied = CopyRates(_Symbol, InpCRT_TF, leftTime, TimeCurrent(), r);
+   if(copied < 3) return;
+
+   int htfSec = PeriodSeconds(InpCRT_TF);
+   int cnt = 0;
+
+   // Oxirgi element hali shakllanayotgan sham bo'lishi mumkin -> uni chetlab
+   // o'tamiz (faqat yopilgan shamlar bo'yicha model tasdiqlanadi).
+   for(int i=1; i<copied-1; i++)
+     {
+      double rHigh = r[i-1].high;
+      double rLow  = r[i-1].low;
+      double r50   = (rHigh + rLow) / 2.0;
+
+      bool bull = (r[i].low  < rLow  && r[i].close > rLow  && r[i].close < rHigh);
+      bool bear = (r[i].high > rHigh && r[i].close < rHigh && r[i].close > rLow);
+      if(!bull && !bear) continue;
+
+      if(InpCRT_OnlyKZ && ZoneOfBar(r[i].time) < 0) continue;
+
+      // Diapazonni cho'zish oxiri
+      datetime endT = r[i].time + (datetime)((long)(InpCRT_ExtendTF+1) * htfSec);
+      if(endT > rightEdge) endT = rightEdge;
+
+      DrawCRT(cnt++, r[i-1].time, endT, rHigh, rLow, r50, r[i], bull);
+
+      // Alert: eng oxirgi yopilgan HTF shami bo'lsa
+      if(InpAlertCRT && i == copied-2)
+         FireAlert((bull?"Bullish":"Bearish") + " CRT modeli [" +
+                   StringSubstr(EnumToString(InpCRT_TF),7) + "]");
+     }
+  }
+
+//+------------------------------------------------------------------+
+//| Bitta CRT modelini chizish                                      |
+//+------------------------------------------------------------------+
+void DrawCRT(const int cnt, const datetime t1, const datetime t2,
+             const double rHigh, const double rLow, const double r50,
+             const MqlRates &manip, const bool bullish)
+  {
+   color c = bullish ? InpCRT_BullColor : InpCRT_BearColor;
+   string base = StringFormat("%sCRT_%d_", OBJ_PREFIX, cnt);
+
+   // Diapazon qutisi
+   if(InpCRT_Range)
+      SetRectangle(base+"box", t1, rHigh, t2, rLow, c, true, 1);
+
+   // 0% / 100% chiziqlari (past/tepa)
+   if(InpCRT_Show100)
+     {
+      SetTrend(base+"top", t1, rHigh, t2, rHigh, c, STYLE_SOLID, 1, false);
+      SetTrend(base+"bot", t1, rLow,  t2, rLow,  c, STYLE_SOLID, 1, false);
+     }
+   // 50% (equilibrium)
+   if(InpCRT_Show50)
+      SetTrend(base+"mid", t1, r50, t2, r50, c, STYLE_DOT, 1, false);
+
+   // TBS (Turtle Body Soup) — sweep belgisi
+   if(InpCRT_ShowTBS)
+     {
+      double sweepLvl = bullish ? manip.low : manip.high;
+      string an = base+"tbs";
+      if(ObjectFind(0,an)<0) ObjectCreate(0,an,OBJ_ARROW,0,manip.time,sweepLvl);
+      else ObjectMove(0,an,0,manip.time,sweepLvl);
+      ObjectSetInteger(0,an,OBJPROP_ARROWCODE, bullish?233:234);
+      ObjectSetInteger(0,an,OBJPROP_COLOR,c);
+      ObjectSetInteger(0,an,OBJPROP_ANCHOR, bullish?ANCHOR_TOP:ANCHOR_BOTTOM);
+      ObjectSetInteger(0,an,OBJPROP_WIDTH,2);
+      ObjectSetInteger(0,an,OBJPROP_SELECTABLE,false);
+      ObjectSetInteger(0,an,OBJPROP_HIDDEN,true);
+      SetText(base+"tbslbl", manip.time, sweepLvl, "TBS ", c,
+              bullish?ANCHOR_RIGHT_UPPER:ANCHOR_RIGHT_LOWER, 7);
+     }
+
+   // "CRT" yorlig'i
+   if(InpCRT_Text)
+      SetText(base+"lbl", manip.time, bullish?rLow:rHigh, "CRT ", c,
+              bullish?ANCHOR_RIGHT_UPPER:ANCHOR_RIGHT_LOWER, 8);
+  }
+
+//+------------------------------------------------------------------+
+//| 7) DASHBOARD                                                    |
 //+------------------------------------------------------------------+
 void UpdateDashboard()
   {
