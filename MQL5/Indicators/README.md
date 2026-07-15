@@ -46,6 +46,14 @@ Barcha sozlamalar va izohlar **o'zbek tilida**.
 - Faqat killzone ichidagilarini ko'rsatish opsiyasi
 - Yangi CRT modelida alert
 
+### Yoqish/o'chirish va Timeframe boshqaruvi
+- **BOSH KALIT** (`InpMasterOn`) — barcha funksiyalarni bir joyda o'chirish
+- Har bir funksiyaning **o'z master toggle**'i (Killzones, OB/BB, MSS, FVG, CRT)
+- **Global TF oralig'i**: `InpVisMinTF` … `InpVisMaxTF` — indikator faqat shu
+  timeframe oralig'ida ko'rinadi
+- **Har funksiya uchun alohida Max TF** — masalan FVG'ni faqat M15 gacha,
+  CRT'ni H1 gacha ko'rsatish mumkin
+
 ### Qo'shimcha
 - **Dashboard** — har sessiyaning FAOL/yopiq holati
 - **Ko'rsatish rejimi** (har bo'lim uchun): Birinchisi / Barchasi / O'chirilgan

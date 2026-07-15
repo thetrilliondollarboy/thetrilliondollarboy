@@ -54,8 +54,16 @@ enum ENUM_OPEN_PRICE
 input group "════════ UMUMIY ════════"
 input int  InpTimezoneOffset = 0;    // Broker vaqti ofseti (soat, killzone vaqtiga qo'shiladi)
 input int  InpDaysToShow     = 15;   // Tarix: ko'rsatiladigan kunlar soni
-input int  InpMaxTFMinutes   = 30;   // Killzone'lar shu daqiqagacha bo'lgan TF larda ko'rinadi
 input bool InpBackgroundFill = true; // Killzone fonini bo'yash (yarim shaffof)
+
+//+------------------------------------------------------------------+
+//| INPUT — Ko'rinish (Timeframe boshqaruvi)                        |
+//+------------------------------------------------------------------+
+input group "════════ KO'RINISH (TIMEFRAME) ════════"
+input bool            InpMasterOn  = true;         // BOSH KALIT — barcha funksiyalar (o'chirsa hech narsa ko'rinmaydi)
+input ENUM_TIMEFRAMES InpVisMinTF  = PERIOD_M1;    // Global: shu TF dan boshlab ko'rinadi
+input ENUM_TIMEFRAMES InpVisMaxTF  = PERIOD_M30;   // Global: shu TF gacha ko'rinadi
+// Quyida har bir funksiya uchun alohida "shu TF gacha ko'rsatish" (max)
 
 //+------------------------------------------------------------------+
 //| INPUT — Alertlar (Ogohlantirishlar)                             |
@@ -74,6 +82,8 @@ input bool InpAlertMSS     = true;   // Yangi MSS paydo bo'lganda
 //| INPUT — Killzones                                                 |
 //+------------------------------------------------------------------+
 input group "════════ KILLZONES ════════"
+input bool            InpKZ_On     = true;        // Killzones — YOQILGAN (bosh kalit)
+input ENUM_TIMEFRAMES InpKZ_MaxTF  = PERIOD_M30;  // Killzones shu TF gacha ko'rinadi
 input bool   InpKZ_LinesTB    = true;         // Killzone chiziqlari: Tepa/Past (Top/Bottom)
 input bool   InpKZ_Mean       = false;        // O'rta chiziq (Mean / 50%)
 input bool   InpKZ_ExtendTB   = true;         // Tepa/Past chiziqlarni o'ngga cho'zish
@@ -118,6 +128,7 @@ input bool            InpOpenLabel    = true;      // Ochilish narxi yorlig'i
 //+------------------------------------------------------------------+
 input group "════════ ORDER & BREAKER BLOCKS ════════"
 input bool            InpOB_On        = true;       // Order Blocks | Breaker Blocks — yoqilgan
+input ENUM_TIMEFRAMES InpOB_MaxTF     = PERIOD_M30;  // OB/BB shu TF gacha ko'rinadi
 input int             InpOB_Swing     = 5;          // Swing aniqlash uzunligi
 input ENUM_MITIGATION InpOB_Mitigation= MIT_CLOSE;  // Mitigatsiya narxi
 input bool            InpOB_UseBody   = false;      // Aniqlashda shamning tanasidan foydalanish
@@ -135,6 +146,7 @@ input bool            InpOB_Text      = true;       // Blok matnini ko'rsatish
 //+------------------------------------------------------------------+
 input group "════════ MARKET STRUCTURE SHIFTS ════════"
 input bool            InpMSS_On       = true;       // Market Structure Shifts — yoqilgan
+input ENUM_TIMEFRAMES InpMSS_MaxTF    = PERIOD_M30;  // MSS shu TF gacha ko'rinadi
 input int             InpMSS_Length   = 7;          // Aniqlash uzunligi (Detection Length)
 input ENUM_DISPLAY_MODE InpMSS_Display= DISP_FIRST; // Ko'rsatish rejimi
 input color           InpMSS_Bull     = C'46,139,120'; // Bullish rangi
@@ -146,6 +158,7 @@ input bool            InpMSS_Text     = true;       // MSS matnini ko'rsatish
 //+------------------------------------------------------------------+
 input group "════════ FAIR VALUE GAPS ════════"
 input bool   InpFVG_On       = true;               // Fair Value Gaps — yoqilgan
+input ENUM_TIMEFRAMES InpFVG_MaxTF = PERIOD_M30;    // FVG shu TF gacha ko'rinadi
 input double InpFVG_Filter   = 1.2;                // FVG kengligi filtri (o'rtachaga nisbatan)
 input bool   InpFVG_Remove   = true;               // Mitigatsiya qilinganlarini o'chirish
 input bool   InpFVG_Extend   = true;               // FVG larni o'ngga cho'zish
@@ -159,6 +172,7 @@ input bool   InpFVG_Text     = true;               // FVG matnini ko'rsatish
 //+------------------------------------------------------------------+
 input group "════════ CRT (Candle Range Theory) ════════"
 input bool            InpCRT_On        = true;       // CRT modellarini aniqlash — yoqilgan
+input ENUM_TIMEFRAMES InpCRT_MaxTF     = PERIOD_H1;  // CRT shu (chart) TF gacha ko'rinadi
 input ENUM_TIMEFRAMES InpCRT_TF        = PERIOD_H1;  // Range candle timeframe (HTF)
 input bool            InpCRT_Range     = true;       // Diapazon (range) qutisini ko'rsatish
 input bool            InpCRT_Show50    = true;       // 50% (equilibrium) chizig'i
@@ -262,6 +276,25 @@ int ZoneOfBar(const datetime t)
       if(Zones[z].enabled && InWindow(sec, Zones[z].startSec, Zones[z].endSec))
          return z;
    return -1;
+  }
+
+//+------------------------------------------------------------------+
+//| Yordamchi: joriy chart TF berilgan max TF gacha-mi (ko'rinadi-mi)|
+//+------------------------------------------------------------------+
+bool TFVisible(const ENUM_TIMEFRAMES maxTF)
+  {
+   return (PeriodSeconds() <= PeriodSeconds(maxTF));
+  }
+
+//+------------------------------------------------------------------+
+//| Yordamchi: joriy chart TF global min..max oralig'ida-mi          |
+//+------------------------------------------------------------------+
+bool TFInGlobalRange()
+  {
+   int cur = PeriodSeconds();
+   if(cur < PeriodSeconds(InpVisMinTF)) return false;
+   if(cur > PeriodSeconds(InpVisMaxTF)) return false;
+   return true;
   }
 
 //+------------------------------------------------------------------+
@@ -395,12 +428,11 @@ int OnCalculate(const int rates_total,
 
    ObjectsDeleteAll(0, OBJ_PREFIX);
 
-   // Timeframe filtri: faqat InpMaxTFMinutes gacha ko'rsatiladi.
-   int tfMin = PeriodSeconds() / 60;
-   if(tfMin > InpMaxTFMinutes && InpMaxTFMinutes > 0)
+   // BOSH KALIT va global timeframe oralig'i tekshiruvi.
+   if(!InpMasterOn || !TFInGlobalRange())
      {
       ChartRedraw(0);
-      return(rates_total);   // bu TF da killzone'lar ko'rsatilmaydi
+      return(rates_total);   // bu holatda hech narsa ko'rsatilmaydi
      }
 
    // Ko'rsatiladigan diapazon boshini topamiz.
@@ -414,26 +446,27 @@ int OnCalculate(const int rates_total,
    datetime rightEdge = time[rates_total-1] + (datetime)(PeriodSeconds()*30);
 
    // 1) KILLZONES ------------------------------------------------------
-   BuildKillzones(rates_total, startIdx, rightEdge, time, high, low);
+   if(InpKZ_On && TFVisible(InpKZ_MaxTF))
+      BuildKillzones(rates_total, startIdx, rightEdge, time, high, low);
 
    // 2) OPEN PRICE lines ----------------------------------------------
-   if(InpOpenPriceOf != OPEN_NONE)
+   if(InpKZ_On && TFVisible(InpKZ_MaxTF) && InpOpenPriceOf != OPEN_NONE)
       BuildOpenPrices(rates_total, startIdx, rightEdge, time, open);
 
    // 3) FAIR VALUE GAPS -----------------------------------------------
-   if(InpFVG_On && InpFVG_Display != DISP_OFF)
+   if(InpFVG_On && InpFVG_Display != DISP_OFF && TFVisible(InpFVG_MaxTF))
       BuildFVG(rates_total, startIdx, rightEdge, time, high, low, close);
 
    // 4) ORDER / BREAKER BLOCKS ----------------------------------------
-   if(InpOB_On && InpOB_Display != DISP_OFF)
+   if(InpOB_On && InpOB_Display != DISP_OFF && TFVisible(InpOB_MaxTF))
       BuildOrderBlocks(rates_total, startIdx, rightEdge, time, open, high, low, close);
 
    // 5) MARKET STRUCTURE SHIFTS ---------------------------------------
-   if(InpMSS_On && InpMSS_Display != DISP_OFF)
+   if(InpMSS_On && InpMSS_Display != DISP_OFF && TFVisible(InpMSS_MaxTF))
       BuildMSS(rates_total, startIdx, time, high, low, close);
 
    // 6) CRT (Candle Range Theory) -------------------------------------
-   if(InpCRT_On)
+   if(InpCRT_On && TFVisible(InpCRT_MaxTF))
       BuildCRT(time[startIdx], rightEdge);
 
    // 7) DASHBOARD ------------------------------------------------------
