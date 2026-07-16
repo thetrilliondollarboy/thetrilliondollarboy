@@ -673,8 +673,14 @@ void ProcessStructure_TF(const int idx,const int tfIdx,const bool bullish,
          if(draw)
          {
             DrawStructLine(idx,tfIdx,false,isMSS,pT,pP,bT);
-            if(allowAlerts && bT>g_structLastAlert[idx][tfIdx])
-            { FireStructAlert(idx,tfIdx,false,isMSS,bT,pP); g_structLastAlert[idx][tfIdx]=bT; }
+            // buzilishni "ko'rilgan" deb belgilaymiz - alert bor-yo'qligidan qat'i nazar.
+            // Shunda TF almashib tarix jim (alertsiz) qayta skanerlanganda ham
+            // eski buzilishlar qayta alert bermaydi; alert faqat 1 marta beriladi.
+            if(bT>g_structLastAlert[idx][tfIdx])
+            {
+               if(allowAlerts) FireStructAlert(idx,tfIdx,false,isMSS,bT,pP);
+               g_structLastAlert[idx][tfIdx]=bT;
+            }
          }
          if(isMSS && !cont) return; // toxtovsiz emas -> 1-MSS dan keyin to'xta
       }
@@ -692,8 +698,14 @@ void ProcessStructure_TF(const int idx,const int tfIdx,const bool bullish,
          if(draw)
          {
             DrawStructLine(idx,tfIdx,true,isMSS,pT,pP,bT);
-            if(allowAlerts && bT>g_structLastAlert[idx][tfIdx])
-            { FireStructAlert(idx,tfIdx,true,isMSS,bT,pP); g_structLastAlert[idx][tfIdx]=bT; }
+            // buzilishni "ko'rilgan" deb belgilaymiz - alert bor-yo'qligidan qat'i nazar.
+            // Shunda TF almashib tarix jim (alertsiz) qayta skanerlanganda ham
+            // eski buzilishlar qayta alert bermaydi; alert faqat 1 marta beriladi.
+            if(bT>g_structLastAlert[idx][tfIdx])
+            {
+               if(allowAlerts) FireStructAlert(idx,tfIdx,true,isMSS,bT,pP);
+               g_structLastAlert[idx][tfIdx]=bT;
+            }
          }
          if(isMSS && !cont) return;
       }
