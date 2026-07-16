@@ -1,0 +1,16 @@
+{
+  "timestamp": "2026-07-16 09:15:00",
+  "symbol": "GBPUSD",
+  "bid": 1.26790,
+  "asia_high": 1.27100,
+  "asia_low": 1.26800,
+  "pdh": 1.27500,
+  "pdl": 1.26500,
+  "killzone": "London",
+  "asia_low_swept": true,
+  "asia_high_swept": false,
+  "pdh_swept": false,
+  "pdl_swept": false,
+  "mss": "bullish",
+  "news_window": false
+}

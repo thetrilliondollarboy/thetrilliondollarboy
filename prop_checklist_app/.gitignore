@@ -1,0 +1,4 @@
+config.json
+killzone_data.json
+__pycache__/
+*.pyc
