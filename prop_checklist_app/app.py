@@ -27,7 +27,11 @@ import time
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 
-APP_DIR = os.path.dirname(os.path.abspath(__file__))
+# .exe (PyInstaller) rejimida config faylni .exe yonida saqlash uchun
+if getattr(sys, "frozen", False):
+    APP_DIR = os.path.dirname(sys.executable)
+else:
+    APP_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(APP_DIR, "config.json")
 
 # ---------------------------------------------------------------------------

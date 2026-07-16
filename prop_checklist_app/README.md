@@ -17,7 +17,24 @@ Tekshirish:
 python --version
 ```
 
-## 2. Dasturni ishga tushirish
+## Tayyor .exe ni yuklab olish (Python shart emas)
+
+Windows uchun tayyor dastur GitHub'da avtomatik yasaladi:
+
+1. Repozitoriyaning **Releases** bo'limiga o'ting → **"ICT Prop Checklist (Windows)"**.
+2. **`ICT_Prop_Checklist.exe`** ni yuklab oling (yoki EA bilan birga `.zip`).
+3. Ikki marta bosib ishga tushiring — o'rnatish kerak emas.
+   (Windows SmartScreen ogohlantirsa: *More info → Run anyway*.)
+
+> `.exe` yonida `config.json` avtomatik yaratiladi — barcha sozlamalaringiz
+> shu yerda saqlanadi.
+
+**O'zingiz yasamoqchi bo'lsangiz** (Python bor kompyuterda): `build_exe.bat`
+faylni ikki marta bosing → `dist\ICT_Prop_Checklist.exe` hosil bo'ladi.
+
+---
+
+## 2. Manba koddan ishga tushirish (ixtiyoriy)
 
 ```
 cd prop_checklist_app

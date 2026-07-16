@@ -1,0 +1,72 @@
+name: Build Windows EXE
+
+# .exe ni GitHub'ning Windows serverida yasaydi va yuklab olinadigan
+# Release sifatida chiqaradi. Branchga push bo'lganda yoki qo'lda ishga tushadi.
+on:
+  push:
+    branches:
+      - claude/prop-trading-plan-l9itms
+    paths:
+      - 'prop_checklist_app/**'
+      - '.github/workflows/build-exe.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install PyInstaller
+        run: pip install pyinstaller
+
+      - name: Build EXE
+        working-directory: prop_checklist_app
+        run: >
+          pyinstaller --onefile --windowed
+          --name ICT_Prop_Checklist
+          app.py
+
+      - name: Stage downloadable files
+        working-directory: prop_checklist_app
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path package | Out-Null
+          Copy-Item dist/ICT_Prop_Checklist.exe package/
+          Copy-Item README.md package/
+          Copy-Item sample_killzone_data.json package/
+          Copy-Item -Recurse metatrader package/metatrader
+          Compress-Archive -Path package/* -DestinationPath ICT_Prop_Checklist_Windows.zip -Force
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ICT_Prop_Checklist_Windows
+          path: prop_checklist_app/ICT_Prop_Checklist_Windows.zip
+
+      - name: Publish downloadable Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: app-latest
+          name: ICT Prop Checklist (Windows)
+          body: |
+            Tayyor Windows dasturi. `.exe` ni yuklab oling va ishga tushiring
+            (Python o'rnatish shart emas).
+
+            - **ICT_Prop_Checklist.exe** — asosiy dastur (bitta fayl)
+            - **ICT_Prop_Checklist_Windows.zip** — dastur + README + MetaTrader EA
+          files: |
+            prop_checklist_app/dist/ICT_Prop_Checklist.exe
+            prop_checklist_app/ICT_Prop_Checklist_Windows.zip
+          prerelease: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
