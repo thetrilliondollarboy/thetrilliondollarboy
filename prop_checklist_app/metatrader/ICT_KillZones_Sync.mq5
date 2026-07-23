@@ -1,5 +1,5 @@
 #property copyright "ICT Kill Zones"
-#property version   "1.20"
+#property version   "1.30"
 #property description "ICT Kill Zones (Checklist SYNC): Asian / London / New York / London Close"
 #property description "sessiyalarini chizadi VA holatni checklist dasturi uchun JSON faylga yozadi."
 #property indicator_chart_window
@@ -17,7 +17,8 @@ enum ENUM_STRUCT_LABELPOS
 {
    SLBL_BREAK       = 0, // Buzilgan nuqtada (o'ngda)
    SLBL_PIVOT       = 1, // Pivotda (chapda)
-   SLBL_CHART_RIGHT = 2  // Chart o'ng chetida
+   SLBL_CHART_RIGHT = 2, // Chart o'ng chetida
+   SLBL_MIDDLE      = 3  // Chiziq o'rtasida (oddiy) - UP pastda, DN tepada
 };
 
 //--- OTE qidiriladigan timeframe ------------------------------------------
@@ -101,7 +102,9 @@ input color           InpBOSLineColor  = clrSlateGray; // BOS chiziq rangi
 input ENUM_LINE_STYLE InpBOSLineStyle  = STYLE_DOT;    // BOS chiziq stili
 input color           InpBOSLabelColor = clrSlateGray; // BOS yozuv rangi
 input int             InpMSSLineWidth  = 1;            // Chiziq qalinligi (MSS/BOS) (oddiy: 1)
-input ENUM_STRUCT_LABELPOS InpStructLabelPos = SLBL_BREAK; // MSS/BOS yozuvi joylashuvi
+input ENUM_STRUCT_LABELPOS InpStructLabelPos = SLBL_MIDDLE; // MSS/BOS yozuvi joylashuvi (oddiy: o'rtada)
+input bool            InpMSSLabelBold  = true;         // MSS/BOS yozuvi QALIN (bold)
+input int             InpMSSLabelFontSize = 10;        // MSS/BOS yozuv shrift o'lchami
 
 input group "== OTE (Optimal Trade Entry) + Target zona =="
 input bool        InpEnableOTE     = true;          // OTE + setup chizilsin
@@ -582,19 +585,40 @@ void DrawStructLine(const int idx,const int tfIdx,const bool upBreak,const bool 
    //--- yozuv (joylashuvi inputdan tanlanadi) ---
    string txt = kind+" "+g_mssTFname[tfIdx]+(upBreak?" UP":" DN");
    datetime lblT;
-   if(InpStructLabelPos==SLBL_PIVOT)            lblT=tPivot;
-   else if(InpStructLabelPos==SLBL_CHART_RIGHT) lblT=TimeCurrent();
-   else                                         lblT=tBreak;
-   ENUM_ANCHOR_POINT anch = upBreak?ANCHOR_LEFT_LOWER:ANCHOR_LEFT_UPPER; // UP tepada, DN pastda
+   ENUM_ANCHOR_POINT anch;
+   if(InpStructLabelPos==SLBL_PIVOT)
+   {
+      lblT=tPivot;
+      anch = upBreak?ANCHOR_LEFT_LOWER:ANCHOR_LEFT_UPPER;
+   }
+   else if(InpStructLabelPos==SLBL_CHART_RIGHT)
+   {
+      lblT=TimeCurrent();
+      anch = upBreak?ANCHOR_LEFT_LOWER:ANCHOR_LEFT_UPPER;
+   }
+   else if(InpStructLabelPos==SLBL_MIDDLE)
+   {
+      // Chiziq o'rtasi (vaqt bo'yicha markaz). UP -> chiziq PASTIDA (markazda),
+      // DN -> chiziq TEPASIDA (markazda). Markaziy anchor gorizontal markazlaydi.
+      lblT = tPivot + (datetime)((tBreak - tPivot)/2);
+      anch = upBreak?ANCHOR_UPPER:ANCHOR_LOWER; // UPPER=matn pastga tushadi, LOWER=matn tepaga chiqadi
+   }
+   else // SLBL_BREAK
+   {
+      lblT=tBreak;
+      anch = upBreak?ANCHOR_LEFT_LOWER:ANCHOR_LEFT_UPPER;
+   }
+
+   string fontName = InpMSSLabelBold ? "Arial Bold" : "Arial";
 
    if(ObjectFind(0,tname)<0)
    {
       ObjectCreate(0,tname,OBJ_TEXT,0,lblT,price);
-      ObjectSetString (0,tname,OBJPROP_FONT,"Arial");
-      ObjectSetInteger(0,tname,OBJPROP_FONTSIZE,InpLabelFontSize);
       ObjectSetInteger(0,tname,OBJPROP_SELECTABLE,false);
       ObjectSetInteger(0,tname,OBJPROP_HIDDEN,true);
    }
+   ObjectSetString (0,tname,OBJPROP_FONT,fontName);           // bold/oddiy - har chizishda qo'llanadi
+   ObjectSetInteger(0,tname,OBJPROP_FONTSIZE,InpMSSLabelFontSize);
    ObjectSetString (0,tname,OBJPROP_TEXT,txt);
    ObjectSetInteger(0,tname,OBJPROP_COLOR,tclr);
    ObjectSetInteger(0,tname,OBJPROP_ANCHOR,anch);
