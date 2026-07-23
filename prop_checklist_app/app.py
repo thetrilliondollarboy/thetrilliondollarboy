@@ -60,6 +60,10 @@ def rule_no_news(data):
     news = _truthy(data.get("news_window"))
     return (not news), ("YANGILIK VAQTI!" if news else "toza")
 
+def rule_ote(data):
+    ok = _truthy(data.get("ote_ready"))
+    return ok, ("zona tayyor" if ok else "yo'q")
+
 def rule_always_manual(data):
     # Auto qoidasi yo'q — faqat qo'lda belgilanadi.
     return None, "qo'lda"
@@ -69,6 +73,7 @@ RULES = {
     "liquidity": ("Likvidlik olindimi? (Asia/PDH/PDL)", rule_liquidity),
     "mss": ("MSS / Shift bo'ldimi?", rule_mss),
     "no_news": ("Yangilik yo'qmi (±30 daqiqa)?", rule_no_news),
+    "ote": ("OTE zona tayyormi? (indikatordan)", rule_ote),
     "manual": ("(faqat qo'lda)", rule_always_manual),
 }
 

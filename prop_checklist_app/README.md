@@ -67,9 +67,43 @@ degan alert va ovoz beradi.
 
 ## 4. Avtomatik rejimni ulash (MetaTrader)
 
-Dastur MetaTrader'dan to'g'ridan-to'g'ri o'qiy olmaydi — shuning uchun
-kichik **eksport EA** killzone/sweep/MSS ma'lumotini JSON faylga yozadi,
-dastur esa o'sha faylni kuzatib boradi.
+Dastur MetaTrader'dan to'g'ridan-to'g'ri o'qiy olmaydi — u JSON faylni
+kuzatib boradi. Faylni yozishning **2 yo'li** bor:
+
+### ✅ Tavsiya: sizning ICT Kill Zones indikatoringiz bilan SINXRON
+
+`metatrader/ICT_KillZones_Sync.mq5` — bu **sizning "ICT Kill Zones"
+indikatoringizning aynan o'zi**, faqat ichiga JSON eksport qo'shilgan.
+Shuning uchun checklist ekranda ko'rayotgan setup bilan **100% sinxron**
+ishlaydi (killzone, Asia sweep, MSS, OTE, PDH/PDL — hammasi indikatorning
+o'z hisobidan olinadi).
+
+1. MT5 → **File → Open Data Folder** → `MQL5/Indicators/` papkasiga
+   `ICT_KillZones_Sync.mq5` ni nusxalang.
+2. MetaEditor'da oching → **Compile** (F7).
+3. Grafikka tashlang (eski `ICT_KillZones` o'rniga). Sozlamalarda
+   **"Checklist eksport (JSON)"** guruhi bor — `InpEnableExport = true`.
+4. Indikator `MQL5/Files/killzone_data.json` faylini yozadi.
+5. Dasturda **⚙ Fayl** → o'sha faylni tanlang → **AVTOMATIK** ni yoqing.
+
+Checklist avtomatik belgilaydigan shartlar (indikatordan):
+
+| Checklist elementi | Qoida | Indikator manbasi |
+|---|---|---|
+| Killzone ichidami | `killzone` | aktiv sessiya |
+| Likvidlik olindimi | `liquidity` | Asia High/Low yoki PDH/PDL buzildi |
+| MSS / Shift | `mss` | OTE TF da tasdiqlangan shift |
+| OTE zona tayyormi | `ote` | sweep + shift → OTE chizildi |
+| Yangilik yo'qmi | `no_news` | `InpNewsTimesCSV` sozlamasi |
+
+> **Eslatma:** indikatorda standart holatda faqat **Asian** sessiya
+> yoqilgan (`InpShowAsian=true`). Boshqa sessiya setuplari uchun tegishli
+> `InpShow...` ni yoqing.
+
+### Muqobil: mustaqil eksport EA (indikatorsiz)
+
+Agar indikatorni qayta kompilyatsiya qilmoqchi bo'lmasangiz, killzone
+ma'lumotini o'zi hisoblab beradigan EA ham bor.
 
 ### MT5 uchun
 1. MetaTrader 5 → **File → Open Data Folder**.
