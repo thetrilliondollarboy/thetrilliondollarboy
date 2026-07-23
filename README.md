@@ -1,6 +1,20 @@
-# ICT Smart Money Concepts — MetaTrader 5 indikatori
+# ICT MetaTrader 5 indikatorlari
 
-`ICT_SmartMoney.mq5` — ICT / Smart Money konsepsiyalari asosida ishlovchi
+Ushbu repozitoriyada ICT / Smart Money konsepsiyalari asosidagi MT5 indikatorlari:
+
+| Fayl | Nima qiladi |
+|------|-------------|
+| `ICT_SmartMoney.mq5` | Market Structure (BOS/CHoCH), Order Block + FVG, Liquidity (BSL/SSL) sweep, Killzone + Silver Bullet |
+| `ICT_AMD_PowerOfThree.mq5` | AMD zonalar: Accumulation → Manipulation → Distribution (Power of Three) |
+
+Barchasi **universal** — har qanday instrument va timeframe uchun. Indikatorlar
+avtomatik savdo qilmaydi, faqat grafikda zonalar/signallarni chizadi.
+
+---
+
+## 1) ICT_SmartMoney.mq5 — Smart Money Concepts
+
+ICT / Smart Money konsepsiyalari asosida ishlovchi
 MetaTrader 5 grafik indikatori. **Universal**: har qanday instrument va
 timeframe uchun ishlaydi. Indikator avtomatik savdo qilmaydi — u faqat
 grafikda zonalar, chiziqlar va signallarni chizadi (qo'lda savdo uchun).
@@ -60,3 +74,37 @@ Indikator bu GMT soatlarini `InpGmtOffset` orqali server vaqtiga o'tkazadi.
 
 Bu vosita o'qув/tahlil maqsadida. Hech qanday indikator daromad kafolatlamaydi —
 har doim risk-menejment qoidalariga amal qiling va demo hisobda sinab ko'ring.
+
+---
+
+## 2) ICT_AMD_PowerOfThree.mq5 — AMD zonalar (Power of Three)
+
+Har bir savdo kuni uchun ICT **AMD** modelini chizadi:
+
+- **A — Accumulation**: belgilangan oynada (default GMT 00:00–07:00, Osiyo seansi) narx yig'iladigan diapazon. Grafikda kulrang quti (high/low).
+- **M — Manipulation**: `AccEndHour` dan keyin diapazon high yoki low'ini yolg'on sindirish (liquidity grab / stop hunt). Sweep ekstremumida belgi qo'yiladi.
+- **D — Distribution**: manipulyatsiyaga **teskari** asosiy harakat. Yo'nalish chizig'i va proyeksiya qilingan **Target** chiziladi (target = diapazon × `InpTargetRatio`).
+
+### Asosiy sozlamalar
+
+- `InpGmtOffset` — broker server vaqti GMT ofseti (vaqt oynalari to'g'ri bo'lishi uchun **muhim**).
+- `InpAccStartHour`, `InpAccEndHour` — accumulation oynasi (GMT). Osiyo o'rniga boshqa seansni ham qo'yish mumkin.
+- `InpDayEndHour` — savdo kuni tugashi (M/D oynasi chegarasi, GMT).
+- `InpMaxDays` — nechta oxirgi kun chizilsin.
+- `InpTargetRatio` — target masofasi (1.0 = diapazonga teng).
+- `InpAlertOnManip` — bugungi kunda manipulyatsiya aniqlanganda alert.
+
+### Ishlash mantig'i
+
+Manipulyatsiya tomoni = accumulation diapazonining birinchi sindirilgan tomoni
+(yuqoriga sweep → bearish distribution; pastga sweep → bullish distribution).
+Bu ICT'ning "liquidity ustidan olib, teskari yo'nalishga jo'natish" g'oyasiga mos.
+
+---
+
+## Umumiy eslatma
+
+Bu vositalar o'quv/tahlil maqsadida. Hech qanday indikator daromad kafolatlamaydi —
+har doim risk-menejment qoidalariga amal qiling va demo hisobda sinab ko'ring.
+Algoritmlar ICT konsepsiyalarining soddalashtirilgan talqini — turli treyderlar
+ularni biroz farqli aniqlashi mumkin.
