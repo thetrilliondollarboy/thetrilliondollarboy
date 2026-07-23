@@ -1,5 +1,5 @@
 #property copyright "ICT Kill Zones"
-#property version   "1.10"
+#property version   "1.20"
 #property description "ICT Kill Zones (Checklist SYNC): Asian / London / New York / London Close"
 #property description "sessiyalarini chizadi VA holatni checklist dasturi uchun JSON faylga yozadi."
 #property indicator_chart_window
@@ -54,7 +54,7 @@ input color InpLondonColor      = clrOrange;       // London chiziq/ramka rangi
 input color InpNewYorkColor     = clrLimeGreen;    // New York chiziq/ramka rangi
 input color InpLondonCloseColor = clrViolet;       // London Close chiziq/ramka rangi
 input color InpBoxFillColor     = C'225,228,245';  // To'rtburchak fon (ichki) rangi
-input int   InpLineWidth        = 2;               // HIGH/LOW chiziq qalinligi
+input int   InpLineWidth        = 1;               // HIGH/LOW chiziq qalinligi (oddiy: 1)
 input bool  InpShowLabels       = true;            // HIGH / LOW yozuvlarini chizish
 input color InpLabelColor       = clrBlack;        // Yozuv (HIGH/LOW) rangi
 input int   InpLabelFontSize    = 9;               // Yozuv shrift o'lchami
@@ -78,11 +78,11 @@ input bool   InpEnableMSSAlert  = true;         // MSS/BOS topilganda alert beri
 input string InpMSSSoundFile    = "alert3.wav"; // MSS/BOS uchun ovoz (break dan farqli)
 
 input group "== Struktura: swing diapazoni (har TF) =="
-input int    InpStructMinM1     = 5;            // M1:  swing MIN barlar (har tomonda)
+input int    InpStructMinM1     = 1;            // M1:  swing MIN barlar (har tomonda) - qo'lda sozlang
 input int    InpStructMaxM1     = 10;           // M1:  swing MAX barlar (har tomonda)
-input int    InpStructMinM5     = 5;            // M5:  swing MIN barlar (har tomonda)
+input int    InpStructMinM5     = 1;            // M5:  swing MIN barlar (har tomonda) - qo'lda sozlang
 input int    InpStructMaxM5     = 10;           // M5:  swing MAX barlar (har tomonda)
-input int    InpStructMinM15    = 5;            // M15: swing MIN barlar (har tomonda)
+input int    InpStructMinM15    = 1;            // M15: swing MIN barlar (har tomonda) - qo'lda sozlang
 input int    InpStructMaxM15    = 10;           // M15: swing MAX barlar (har tomonda)
 
 input group "== Struktura: toxtovsiz rejim va BOS (har TF) =="
@@ -100,11 +100,12 @@ input color           InpMSSLabelColor = C'0,0,139';   // MSS yozuv rangi (to'q 
 input color           InpBOSLineColor  = clrSlateGray; // BOS chiziq rangi
 input ENUM_LINE_STYLE InpBOSLineStyle  = STYLE_DOT;    // BOS chiziq stili
 input color           InpBOSLabelColor = clrSlateGray; // BOS yozuv rangi
-input int             InpMSSLineWidth  = 2;            // Chiziq qalinligi (MSS/BOS)
+input int             InpMSSLineWidth  = 1;            // Chiziq qalinligi (MSS/BOS) (oddiy: 1)
 input ENUM_STRUCT_LABELPOS InpStructLabelPos = SLBL_BREAK; // MSS/BOS yozuvi joylashuvi
 
 input group "== OTE (Optimal Trade Entry) + Target zona =="
 input bool        InpEnableOTE     = true;          // OTE + setup chizilsin
+input bool        InpOTESimple     = true;          // ODDIY rejim: to'ldirilgan rang yo'q (faqat kontur), chartni to'smaydi
 input ENUM_OTE_TF InpOTETimeframe  = OTE_M5;        // OTE qidiriladigan TF (shift shu TF da bo'ladi)
 input double      InpOTEFibLow     = 0.618;         // OTE band pastki fib
 input double      InpOTEFibHigh    = 0.786;         // OTE band yuqori fib
@@ -639,9 +640,9 @@ void ProcessStructure_TF(const int idx,const int tfIdx,const bool bullish,
    if(n<=2*sMax+2) return;
    ArraySetAsSeries(r,false);
 
-   double hi[]; double lo[]; datetime tm[];
-   ArrayResize(hi,n); ArrayResize(lo,n); ArrayResize(tm,n);
-   for(int a=0;a<n;a++){ hi[a]=r[a].high; lo[a]=r[a].low; tm[a]=r[a].time; }
+   double hi[]; double lo[]; double cl[]; datetime tm[];
+   ArrayResize(hi,n); ArrayResize(lo,n); ArrayResize(cl,n); ArrayResize(tm,n);
+   for(int a=0;a<n;a++){ hi[a]=r[a].high; lo[a]=r[a].low; cl[a]=r[a].close; tm[a]=r[a].time; }
 
    int start=0;
    while(start<n && tm[start]<sinceT) start++;
@@ -664,8 +665,9 @@ void ProcessStructure_TF(const int idx,const int tfIdx,const bool bullish,
       { int c=k-s; if(c-s<0) break;
         if(IsSwingHigh(c,s,n,hi) && tm[c]>consHighT){ if(!haveHigh || tm[c]>highT){highP=hi[c]; highT=tm[c]; haveHigh=true;} break; } }
 
-      // DOWN buzilish (swing LOW pastga)
-      if(haveLow && lo[k]<lowP)
+      // DOWN buzilish (swing LOW pastga) — FAQAT YOPILISH (close) daraja ostida yopilsa.
+      // Bar soyasi (wick) tegib qaytsa MSS hisoblanmaydi. Faqat YOPILGAN barlar (k<n-1).
+      if(haveLow && k<n-1 && cl[k]<lowP)
       {
          bool isMSS=(trend!=-1);
          trend=-1;
@@ -686,8 +688,9 @@ void ProcessStructure_TF(const int idx,const int tfIdx,const bool bullish,
          if(isMSS && !cont) return; // toxtovsiz emas -> 1-MSS dan keyin to'xta
       }
 
-      // UP buzilish (swing HIGH yuqoriga)
-      if(haveHigh && hi[k]>highP)
+      // UP buzilish (swing HIGH yuqoriga) — FAQAT YOPILISH (close) daraja ustida yopilsa.
+      // Bar soyasi (wick) tegib qaytsa MSS hisoblanmaydi. Faqat YOPILGAN barlar (k<n-1).
+      if(haveHigh && k<n-1 && cl[k]>highP)
       {
          bool isMSS=(trend!=+1);
          trend=+1;
@@ -743,18 +746,18 @@ void ProcessAllMSS(const bool allowAlerts)
 
 //--- kichik yordamchi: to'ldirilgan to'rtburchak (zona) ---------------------
 void UpsertBox(const string name,const datetime t1,const double p1,const datetime t2,const double p2,
-               const color clr,const bool back)
+               const color clr,const bool back,const bool fill)
 {
    if(ObjectFind(0,name)<0)
    {
       ObjectCreate(0,name,OBJ_RECTANGLE,0,t1,p1,t2,p2);
       ObjectSetInteger(0,name,OBJPROP_STYLE,STYLE_SOLID);
       ObjectSetInteger(0,name,OBJPROP_WIDTH,1);
-      ObjectSetInteger(0,name,OBJPROP_FILL,true);
       ObjectSetInteger(0,name,OBJPROP_BACK,back);
       ObjectSetInteger(0,name,OBJPROP_SELECTABLE,false);
       ObjectSetInteger(0,name,OBJPROP_HIDDEN,true);
    }
+   ObjectSetInteger(0,name,OBJPROP_FILL,fill); // oddiy rejimda faqat kontur (to'ldirilmaydi)
    ObjectSetInteger(0,name,OBJPROP_COLOR,clr);
    ObjectSetInteger(0,name,OBJPROP_TIME,0,t1); ObjectSetDouble(0,name,OBJPROP_PRICE,0,p1);
    ObjectSetInteger(0,name,OBJPROP_TIME,1,t2); ObjectSetDouble(0,name,OBJPROP_PRICE,1,p2);
@@ -808,12 +811,17 @@ void DrawOTESetup(const int idx,const bool bullish,const double sweepP,const dou
 
    string base="ICTKZ_"+g_key[idx]+"_"+MakeId(g_startTime[idx])+"_OTE_"+(bullish?"up":"dn");
 
-   if(InpOTEShowTarget)
-      UpsertBox(base+"_tgt",leftT,entry,t2,targetP,InpOTETargetColor,true);
+   bool fill = !InpOTESimple; // oddiy rejim -> to'ldirilmaydi, faqat kontur
 
-   UpsertBox(base+"_ote",leftT,zHi,t2,zLo,InpOTEColor,true);
+   // Target zona (katta yashil maydon) faqat to'liq rejimda chiziladi
+   if(InpOTEShowTarget && !InpOTESimple)
+      UpsertBox(base+"_tgt",leftT,entry,t2,targetP,InpOTETargetColor,true,fill);
 
-   if(InpOTEShowFib)
+   // OTE band: oddiy rejimda faqat kontur (chartni to'smaydi)
+   UpsertBox(base+"_ote",leftT,zHi,t2,zLo,InpOTEColor,true,fill);
+
+   // Fib chiziqlari faqat to'liq rejimda (oddiy rejimda chartni to'sadi)
+   if(InpOTEShowFib && !InpOTESimple)
    {
       UpsertFibLine(base+"_f0",  leftT,t2, shiftP,            InpOTEFibColor, "0");
       UpsertFibLine(base+"_f50", leftT,t2, shiftP+0.5*rng,    InpOTEFibColor, "0.5");
