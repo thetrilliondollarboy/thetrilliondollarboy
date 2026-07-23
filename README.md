@@ -79,20 +79,22 @@ har doim risk-menejment qoidalariga amal qiling va demo hisobda sinab ko'ring.
 
 ## 2) ICT_AMD_PowerOfThree.mq5 — AMD zonalar (Power of Three)
 
-Har bir savdo kuni uchun ICT **AMD** modelini chizadi:
+**Vaqtga (kun boshi/oxiri, sessiya) bog'liq emas.** AMD sikllari **bar soniga**
+asoslangan holda **ketma-ket, yonma-yon** chiziladi. Har bir sikl:
 
-- **A — Accumulation**: belgilangan oynada (default GMT 00:00–07:00, Osiyo seansi) narx yig'iladigan diapazon. Grafikda kulrang quti (high/low).
-- **M — Manipulation**: `AccEndHour` dan keyin diapazon high yoki low'ini yolg'on sindirish (liquidity grab / stop hunt). Sweep ekstremumida belgi qo'yiladi.
-- **D — Distribution**: manipulyatsiyaga **teskari** asosiy harakat. Yo'nalish chizig'i va proyeksiya qilingan **Target** chiziladi (target = diapazon × `InpTargetRatio`).
+- **A — Accumulation**: `InpAccBars` ta barlik yig'ilish diapazoni. Grafikda kulrang quti (high/low).
+- **M — Manipulation**: accumulationdan keyingi `InpScanBars` oynasida diapazon high yoki low'ining birinchi sindirilishi (liquidity sweep). Sweep ekstremumida **M** belgisi.
+- **D — Distribution**: sweepga **teskari** haqiqiy narx harakati (`InpDistBars` uzunlikda chiziladi). **Target yo'q.**
+
+Har bir sikl manipulyatsiyadan keyin darrov yangisi bilan davom etadi — shuning
+uchun zonalar grafikni uzluksiz, ketma-ket qoplaydi.
 
 ### Asosiy sozlamalar
 
-- `InpGmtOffset` — broker server vaqti GMT ofseti (vaqt oynalari to'g'ri bo'lishi uchun **muhim**).
-- `InpAccStartHour`, `InpAccEndHour` — accumulation oynasi (GMT). Osiyo o'rniga boshqa seansni ham qo'yish mumkin.
-- `InpDayEndHour` — savdo kuni tugashi (M/D oynasi chegarasi, GMT).
-- `InpMaxDays` — nechta oxirgi kun chizilsin.
-- `InpTargetRatio` — target masofasi (1.0 = diapazonga teng).
-- `InpAlertOnManip` — bugungi kunda manipulyatsiya aniqlanganda alert.
+- `InpAccBars` — accumulation diapazoni uzunligi (bar). Kichikroq = tez-tez sikllar.
+- `InpScanBars` — manipulyatsiyani izlash oynasi (bar).
+- `InpDistBars` — distribution chizig'i uzunligi (bar).
+- `InpAlertOnManip` — oxirgi (eng so'nggi) sikl manipulyatsiyasida alert.
 
 ### Ishlash mantig'i
 
