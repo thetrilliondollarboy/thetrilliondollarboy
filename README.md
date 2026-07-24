@@ -125,11 +125,13 @@ Avtomatik chizmaydi — **siz o'zingiz chizasiz**. Grafik chetida panel chiqadi:
 3. Burchak/tomon "tutqich"laridan **cho'zib** zona o'lchamini o'zingiz belgilaysiz.
 4. Yana zona kerak bo'lsa — yana tugmani bosasiz.
 
-### Ovozli alert (high / low)
+### Ovozli alert (high / low) — har zona uchun 1 marta
 
 - **Alert: ON/OFF** tugmasi bilan yoqasiz/o'chirasiz (yashil = yoniq, qizil = o'chiq).
-- Narx zonaning **yuqori (high)** chizig'iga tekkanda `InpSoundHigh` (default `alert.wav`) ovozi, **pastki (low)** chizig'iga tekkanda `InpSoundLow` (default `alert2.wav`) ovozi chalinadi.
-- Har bir tegish uchun **bir marta** ovoz chiqadi (spam yo'q); narx chiqib qaytsa, yana chalinadi.
+- Narx zonaning **high** yoki **low** chizig'ini kesib o'tganda (ya'ni zonaga kirganda yoki zonadan chiqqanda) **faqat 1 marta** ovoz chalinadi: high uchun `InpSoundHigh` (`alert.wav`), low uchun `InpSoundLow` (`alert2.wav`).
+- Alert bergandan **keyin o'sha zona avtomatik o'chadi** — qayta ovoz bermaydi.
+- **Timeframe almashtirsangiz qayta ishga tushmaydi**: har zonaning holati obyektning o'zida saqlanadi, ON/OFF holati esa terminal xotirasida saqlanadi.
+- Zonani **surib/cho'zsangiz**, u yangi joyda qayta faollashadi (yangi joyda yana 1 marta alert berishi mumkin).
 - `InpPopupAlert = true` qilsangiz, ovoz bilan birga oyna-alert ham chiqadi.
 - Bu ovozli alertlar **barcha** zonalarga (A/M/D va shablon) tegishli.
 

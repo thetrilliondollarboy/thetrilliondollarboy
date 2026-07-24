@@ -65,20 +65,28 @@ string gZone = "AMDM_zone_";       // chizilgan zonalar prefiksi
 int    gZoneId = 0;
 bool   gAlertsOn = true;
 
-// alertlarni takrorlamaslik uchun har zona holati
-string gZN[];      // zona nomi
-bool   gAbove[];   // hozir HIGH ustidami
-bool   gBelow[];   // hozir LOW ostidami
+// Har zonaning alert holati OBJPROP_ZORDER da saqlanadi. ZORDER obyekt bilan
+// birga saqlanadi, shuning uchun TF almashsa ham holat yo'qolmaydi:
+//   0 = yangi (baseline hali aniqlanmagan)
+//   1 = baseline: narx zona ICHIDA edi
+//   2 = baseline: narx zona TASHQARISIDA edi
+//   9 = alert berilgan -> avtomatik o'chirilgan (boshqa bermaydi)
+#define ZST_NEW      0
+#define ZST_INSIDE   1
+#define ZST_OUTSIDE  2
+#define ZST_FIRED    9
 
 //+------------------------------------------------------------------+
 int OnInit()
 {
    IndicatorSetString(INDICATOR_SHORTNAME, "ICT AMD Manual");
    gZoneId   = 0;
-   gAlertsOn = InpAlertsDefault;
-   ArrayResize(gZN, 0);
-   ArrayResize(gAbove, 0);
-   ArrayResize(gBelow, 0);
+   // alert yoqiq/o'chiqligini TF almashuvidan keyin ham eslab qolamiz
+   string key = AlertKey();
+   if(GlobalVariableCheck(key))
+      gAlertsOn = (GlobalVariableGet(key) != 0.0);
+   else
+      gAlertsOn = InpAlertsDefault;
    BuildPanel();
    EventSetTimer(1);   // alert monitoringi uchun (sekundlik)
    ChartRedraw();
@@ -91,7 +99,10 @@ void OnDeinit(const int reason)
    EventKillTimer();
    ObjectsDeleteAll(0, gBtn);
    if(reason == REASON_REMOVE)
+   {
       ObjectsDeleteAll(0, gZone);
+      GlobalVariableDel(AlertKey());
+   }
    ChartRedraw();
 }
 
@@ -130,6 +141,7 @@ void BuildPanel()
 
 string AlertBtnText()  { return gAlertsOn ? "Alert: ON (ovoz)" : "Alert: OFF"; }
 color  AlertBtnColor() { return gAlertsOn ? clrForestGreen : clrFireBrick; }
+string AlertKey()      { return "AMDM_ALR_" + IntegerToString(ChartID()); }
 
 void CreateButton(string key, string text, int y, color bg)
 {
@@ -162,7 +174,7 @@ void OnChartEvent(const int id, const long &lparam,
       else if(sparam == gBtn+"M")   { CreateZone("Manipulation", InpManipColor, InpZoneStyle, InpZoneWidth, InpFillZone, InpZoneBack, "M - Manipulation"); ResetBtn(sparam); }
       else if(sparam == gBtn+"D")   { CreateZone("Distribution", InpDistColor, InpZoneStyle, InpZoneWidth, InpFillZone, InpZoneBack, "D - Distribution"); ResetBtn(sparam); }
       else if(sparam == gBtn+"TPL") { CreateZone("Zona", InpTplColor, InpTplStyle, InpTplWidth, InpTplFill, InpTplBack, InpTplText); ResetBtn(sparam); }
-      else if(sparam == gBtn+"ALR") { gAlertsOn = !gAlertsOn; UpdateAlertBtn(); ResetBtn(sparam); }
+      else if(sparam == gBtn+"ALR") { gAlertsOn = !gAlertsOn; GlobalVariableSet(AlertKey(), gAlertsOn?1.0:0.0); UpdateAlertBtn(); ResetBtn(sparam); }
       else if(sparam == gBtn+"CLR") { ClearZones(); ResetBtn(sparam); }
       return;
    }
@@ -171,7 +183,11 @@ void OnChartEvent(const int id, const long &lparam,
    if(id == CHARTEVENT_OBJECT_DRAG)
    {
       if(StringFind(sparam, gZone) == 0 && StringFind(sparam, "_lbl") < 0)
+      {
          RepositionLabel(sparam);
+         // zona ko'chirildi/o'lchami o'zgardi -> yangi joyda alertni qayta faollashtiramiz
+         ObjectSetInteger(0, sparam, OBJPROP_ZORDER, ZST_NEW);
+      }
       return;
    }
 }
@@ -220,8 +236,8 @@ void CreateZone(string type, color clr, ENUM_LINE_STYLE style, int width,
       ObjectSetInteger(0, lbl, OBJPROP_BACK, false);
    }
 
-   // alert holatini boshlang'ich narxga qarab o'rnatamiz (darrov chiqmasligi uchun)
-   RegisterZone(name);
+   // alert holati: baseline keyingi tekshiruvda aniqlanadi (darrov chiqmasligi uchun)
+   ObjectSetInteger(0, name, OBJPROP_ZORDER, ZST_NEW);
    ChartRedraw();
 }
 
@@ -241,34 +257,10 @@ void RepositionLabel(string zoneName)
 void ClearZones()
 {
    ObjectsDeleteAll(0, gZone);
-   ArrayResize(gZN, 0);
-   ArrayResize(gAbove, 0);
-   ArrayResize(gBelow, 0);
    ChartRedraw();
 }
 
 //============================ ALERT =================================//
-
-int FindZoneState(string name)
-{
-   for(int i=0; i<ArraySize(gZN); i++)
-      if(gZN[i] == name) return i;
-   return -1;
-}
-
-void RegisterZone(string name)
-{
-   if(FindZoneState(name) >= 0) return;
-   double hi, lo; if(!ZoneHiLo(name, hi, lo)) return;
-   double price = SymbolInfoDouble(_Symbol, SYMBOL_BID);
-   int k = ArraySize(gZN);
-   ArrayResize(gZN, k+1);
-   ArrayResize(gAbove, k+1);
-   ArrayResize(gBelow, k+1);
-   gZN[k]    = name;
-   gAbove[k] = (price >= hi);
-   gBelow[k] = (price <= lo);
-}
 
 bool ZoneHiLo(string name, double &hi, double &lo)
 {
@@ -280,6 +272,13 @@ bool ZoneHiLo(string name, double &hi, double &lo)
    return true;
 }
 
+//+------------------------------------------------------------------+
+//| Har zona uchun FAQAT 1 MARTA alert:                              |
+//|  - baseline (ichkarida/tashqarida) birinchi tekshiruvda yoziladi |
+//|  - narx high/low ni kesib zonadan chiqsa/kirsa -> 1 marta ovoz   |
+//|  - keyin zona ZST_FIRED bo'lib avtomatik o'chadi                 |
+//|  - holat obyektda saqlanadi -> TF almashsa qayta ishga tushmaydi |
+//+------------------------------------------------------------------+
 void CheckAlerts()
 {
    if(!gAlertsOn) return;
@@ -293,25 +292,32 @@ void CheckAlerts()
       if(StringFind(name, gZone) != 0) continue;
       if(StringFind(name, "_lbl") >= 0) continue;
 
+      long st = ObjectGetInteger(0, name, OBJPROP_ZORDER);
+      if(st == ZST_FIRED) continue;   // allaqachon berilgan -> o'chirilgan
+
       double hi, lo;
       if(!ZoneHiLo(name, hi, lo)) continue;
+      bool inside = (price > lo && price < hi);
 
-      int idx = FindZoneState(name);
-      if(idx < 0){ RegisterZone(name); idx = FindZoneState(name); if(idx < 0) continue; }
-
-      // HIGH chizig'i
-      if(price >= hi)
+      // baseline hali aniqlanmagan bo'lsa -> hozirgi holatni yozib qo'yamiz
+      if(st == ZST_NEW)
       {
-         if(!gAbove[idx]){ FireAlert(name, hi, true); gAbove[idx] = true; }
+         ObjectSetInteger(0, name, OBJPROP_ZORDER, inside ? ZST_INSIDE : ZST_OUTSIDE);
+         continue;
       }
-      else gAbove[idx] = false;
 
-      // LOW chizig'i
-      if(price <= lo)
-      {
-         if(!gBelow[idx]){ FireAlert(name, lo, false); gBelow[idx] = true; }
-      }
-      else gBelow[idx] = false;
+      bool baselineInside = (st == ZST_INSIDE);
+      if(inside == baselineInside)
+         continue;   // holat o'zgarmadi -> alert yo'q
+
+      // holat o'zgardi (high/low kesildi yoki zonadan chiqildi) -> 1 marta alert
+      bool highEdge;
+      if(price >= hi)      highEdge = true;
+      else if(price <= lo) highEdge = false;
+      else                 highEdge = (MathAbs(price - hi) < MathAbs(price - lo));
+
+      FireAlert(name, highEdge ? hi : lo, highEdge);
+      ObjectSetInteger(0, name, OBJPROP_ZORDER, ZST_FIRED);   // avtomatik o'chirish
    }
 }
 
