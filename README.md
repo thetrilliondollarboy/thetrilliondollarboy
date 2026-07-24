@@ -109,29 +109,49 @@ Bu ICT'ning "liquidity ustidan olib, teskari yo'nalishga jo'natish" g'oyasiga mo
 
 Avtomatik chizmaydi — **siz o'zingiz chizasiz**. Grafik chetida panel chiqadi:
 
-- **A  Accumulation** — bosilsa, Accumulation rangidagi to'ldirilgan to'rtburchak paydo bo'ladi.
-- **M  Manipulation** — Manipulation rangidagi to'rtburchak.
-- **D  Distribution** — Distribution rangidagi to'rtburchak.
-- **Tozalash (zonalar)** — chizilgan barcha zonalarni o'chiradi.
+| Tugma | Natija |
+|-------|--------|
+| **A  Accumulation** | Accumulation rangidagi zona + "A - Accumulation" yozuvi |
+| **M  Manipulation** | Manipulation rangidagi zona + yozuv |
+| **D  Distribution** | Distribution rangidagi zona + yozuv |
+| **+ Zona (shablon)** | Sozlanadigan uslub (style) va **yozuvli** to'rtburchak — shablon |
+| **Alert: ON/OFF** | Zona **high/low** ga tekkanda ovozli alertni yoqish/o'chirish |
+| **Tozalash (zonalar)** | Barcha chizilgan zonalarni o'chiradi |
 
 ### Qanday ishlatiladi
 
-1. Kerakli fazani (masalan **A**) bosasiz → grafik markazida rangli fon to'rtburchagi hosil bo'ladi (allaqachon tanlangan holatda).
-2. To'rtburchakni **sichqoncha bilan surib** kerakli joyga olib borasiz.
+1. Kerakli tugmani (masalan **A** yoki **+ Zona**) bosasiz → grafik markazida rangli to'rtburchak + yozuv paydo bo'ladi (allaqachon tanlangan holatda).
+2. To'rtburchakni **sichqoncha bilan surib** kerakli joyga olib borasiz — **yozuv ham birga suriladi**.
 3. Burchak/tomon "tutqich"laridan **cho'zib** zona o'lchamini o'zingiz belgilaysiz.
-4. Yana bir zona kerak bo'lsa — yana tugmani bosasiz.
+4. Yana zona kerak bo'lsa — yana tugmani bosasiz.
 
-### Sozlamalar
+### Ovozli alert (high / low)
 
-- `InpAccColor`, `InpManipColor`, `InpDistColor` — har fazaning rangi.
-- `InpFillZone` — zona to'ldirilgan (fon) bo'lsinmi.
-- `InpZoneBack` — zona shamlar orqasida (fon) chizilsinmi.
+- **Alert: ON/OFF** tugmasi bilan yoqasiz/o'chirasiz (yashil = yoniq, qizil = o'chiq).
+- Narx zonaning **yuqori (high)** chizig'iga tekkanda `InpSoundHigh` (default `alert.wav`) ovozi, **pastki (low)** chizig'iga tekkanda `InpSoundLow` (default `alert2.wav`) ovozi chalinadi.
+- Har bir tegish uchun **bir marta** ovoz chiqadi (spam yo'q); narx chiqib qaytsa, yana chalinadi.
+- `InpPopupAlert = true` qilsangiz, ovoz bilan birga oyna-alert ham chiqadi.
+- Bu ovozli alertlar **barcha** zonalarga (A/M/D va shablon) tegishli.
+
+### Shablon to'rtburchak (style + yozuv)
+
+- **+ Zona** tugmasi `InpTplColor`, `InpTplStyle` (uslub), `InpTplWidth`, `InpTplFill`, `InpTplBack` va `InpTplText` bo'yicha shablon zona qo'yadi.
+- Uslubni (style) va yozuvni Inputs orqali oldindan sozlab qo'yasiz — keyin har bosishda tayyor shablon chiqadi.
+- Alohida zonaning uslubini keyin ham o'zgartirish mumkin: zonani **ikki marta bosib** (yoki Ctrl+B → Object List) xususiyatlar oynasidan.
+
+### Sozlamalar (asosiy)
+
+- `InpAccColor`, `InpManipColor`, `InpDistColor` — AMD fazalari rangi.
+- `InpFillZone`, `InpZoneBack`, `InpZoneStyle`, `InpZoneWidth` — AMD zona ko'rinishi.
+- `InpLabelColor`, `InpLabelFont` — yozuv rangi/shrifti.
+- `InpAlertsDefault` — ishga tushganda alert yoniq bo'lsinmi.
 - `InpCorner`, `InpPanelX/Y`, `InpBtnW/H` — panel joyi va tugma o'lchamlari.
 
 ### Eslatma
 
 - Chizilgan zonalar odatdagi grafik obyektlari — ularni istalgan vaqt sichqoncha bilan tahrirlash, o'chirish (Delete) yoki `Object List` (Ctrl+B) orqali boshqarish mumkin.
-- Indikatorni grafikdan olib tashlasangiz, zonalar ham o'chadi; shunchaki timeframe almashtirsangiz panel qayta chiziladi, zonalaringiz saqlanadi.
+- Ovoz fayllari MT5 ning standart tovushlari; xohlasangiz `InpSoundHigh`/`InpSoundLow` ga o'z `.wav` faylingiz nomini (MT5 `Sounds` papkasidagi) yozasiz.
+- Indikatorni grafikdan olib tashlasangiz, zonalar ham o'chadi; timeframe almashtirsangiz panel qayta chiziladi, zonalaringiz saqlanadi.
 
 ---
 
