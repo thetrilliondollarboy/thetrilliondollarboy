@@ -5,7 +5,8 @@ Ushbu repozitoriyada ICT / Smart Money konsepsiyalari asosidagi MT5 indikatorlar
 | Fayl | Nima qiladi |
 |------|-------------|
 | `ICT_SmartMoney.mq5` | Market Structure (BOS/CHoCH), Order Block + FVG, Liquidity (BSL/SSL) sweep, Killzone + Silver Bullet |
-| `ICT_AMD_PowerOfThree.mq5` | AMD zonalar: Accumulation → Manipulation → Distribution (Power of Three) |
+| `ICT_AMD_PowerOfThree.mq5` | AMD zonalar: Accumulation → Manipulation → Distribution (avtomatik, ketma-ket) |
+| `ICT_AMD_Manual.mq5` | AMD zonalarni **qo'lda** chizish asbobi (panel + tugmalar) |
 
 Barchasi **universal** — har qanday instrument va timeframe uchun. Indikatorlar
 avtomatik savdo qilmaydi, faqat grafikda zonalar/signallarni chizadi.
@@ -101,6 +102,36 @@ uchun zonalar grafikni uzluksiz, ketma-ket qoplaydi.
 Manipulyatsiya tomoni = accumulation diapazonining birinchi sindirilgan tomoni
 (yuqoriga sweep → bearish distribution; pastga sweep → bullish distribution).
 Bu ICT'ning "liquidity ustidan olib, teskari yo'nalishga jo'natish" g'oyasiga mos.
+
+---
+
+## 3) ICT_AMD_Manual.mq5 — AMD zonalarni qo'lda chizish asbobi
+
+Avtomatik chizmaydi — **siz o'zingiz chizasiz**. Grafik chetida panel chiqadi:
+
+- **A  Accumulation** — bosilsa, Accumulation rangidagi to'ldirilgan to'rtburchak paydo bo'ladi.
+- **M  Manipulation** — Manipulation rangidagi to'rtburchak.
+- **D  Distribution** — Distribution rangidagi to'rtburchak.
+- **Tozalash (zonalar)** — chizilgan barcha zonalarni o'chiradi.
+
+### Qanday ishlatiladi
+
+1. Kerakli fazani (masalan **A**) bosasiz → grafik markazida rangli fon to'rtburchagi hosil bo'ladi (allaqachon tanlangan holatda).
+2. To'rtburchakni **sichqoncha bilan surib** kerakli joyga olib borasiz.
+3. Burchak/tomon "tutqich"laridan **cho'zib** zona o'lchamini o'zingiz belgilaysiz.
+4. Yana bir zona kerak bo'lsa — yana tugmani bosasiz.
+
+### Sozlamalar
+
+- `InpAccColor`, `InpManipColor`, `InpDistColor` — har fazaning rangi.
+- `InpFillZone` — zona to'ldirilgan (fon) bo'lsinmi.
+- `InpZoneBack` — zona shamlar orqasida (fon) chizilsinmi.
+- `InpCorner`, `InpPanelX/Y`, `InpBtnW/H` — panel joyi va tugma o'lchamlari.
+
+### Eslatma
+
+- Chizilgan zonalar odatdagi grafik obyektlari — ularni istalgan vaqt sichqoncha bilan tahrirlash, o'chirish (Delete) yoki `Object List` (Ctrl+B) orqali boshqarish mumkin.
+- Indikatorni grafikdan olib tashlasangiz, zonalar ham o'chadi; shunchaki timeframe almashtirsangiz panel qayta chiziladi, zonalaringiz saqlanadi.
 
 ---
 
