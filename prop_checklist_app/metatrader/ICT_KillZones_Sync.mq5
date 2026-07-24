@@ -1,5 +1,5 @@
 #property copyright "ICT Kill Zones"
-#property version   "1.30"
+#property version   "1.40"
 #property description "ICT Kill Zones (Checklist SYNC): Asian / London / New York / London Close"
 #property description "sessiyalarini chizadi VA holatni checklist dasturi uchun JSON faylga yozadi."
 #property indicator_chart_window
@@ -73,6 +73,7 @@ input group "== HIGH/LOW chiziqlari =="
 input bool   InpShowLevelLines      = true;         // HIGH/LOW darajalarini chiziq bilan ko'rsatish
 
 input group "== Market Structure (MSS + BOS) - kaskad M1->M5->M15 =="
+input bool   InpMSSMaster       = true;         // >>> MSS funksiyasini BUTUNLAY yoqish/o'chirish <<<
 input bool   InpEnableMSS       = true;         // MSS (Change of Character) aniqlansin
 input bool   InpEnableBOS       = true;         // BOS (Break of Structure, trend davomi) aniqlansin
 input bool   InpEnableMSSAlert  = true;         // MSS/BOS topilganda alert berilsin
@@ -759,6 +760,7 @@ void CascadeMSS(const int idx,const bool bullish,const bool allowAlerts)
 
 void ProcessAllMSS(const bool allowAlerts)
 {
+   if(!InpMSSMaster) return;                        // MSS butunlay o'chirilgan
    if(!InpEnableMSS && !InpEnableBOS) return;
    for(int idx=0;idx<SESSION_COUNT;idx++)
    {
@@ -925,6 +927,7 @@ void ProcessOTE(const int idx)
 
 void ProcessAllOTE()
 {
+   if(!InpMSSMaster) return;                        // OTE MSS shiftga bog'liq - MSS o'chsa OTE ham o'chadi
    if(!InpEnableOTE) return;
    for(int idx=0;idx<SESSION_COUNT;idx++)
    {
@@ -1203,22 +1206,25 @@ void ExportState()
    bool pdlSwept = g_pdTermLoBroken || g_pdNyLoBroken;
 
    // 4) MSS — OTE timeframe bo'yicha tasdiqlangan shift (aynan OTE chizilgan payt)
+   //    MSS butunlay o'chirilgan bo'lsa -> "none" (checklist ham belgilamaydi)
    int otf=(int)InpOTETimeframe;
    string mss="none";
-   for(int i=0;i<SESSION_COUNT;i++)
-   {
-      if(!g_enabled[i]) continue;
-      if(g_mssUpWatch[i] && g_mssUpDone[i][otf]) { mss="bullish"; break; }
-      if(g_mssDnWatch[i] && g_mssDnDone[i][otf]) { mss="bearish"; break; }
-   }
-
-   // 5) OTE setup tayyor bo'lganini ham beramiz (qo'shimcha ma'lumot)
    bool oteReady=false;
-   for(int i=0;i<SESSION_COUNT;i++)
+   if(InpMSSMaster)
    {
-      if(!g_enabled[i]) continue;
-      if((g_mssUpWatch[i] && g_mssUpDone[i][otf]) ||
-         (g_mssDnWatch[i] && g_mssDnDone[i][otf])) { oteReady=true; break; }
+      for(int i=0;i<SESSION_COUNT;i++)
+      {
+         if(!g_enabled[i]) continue;
+         if(g_mssUpWatch[i] && g_mssUpDone[i][otf]) { mss="bullish"; break; }
+         if(g_mssDnWatch[i] && g_mssDnDone[i][otf]) { mss="bearish"; break; }
+      }
+      // 5) OTE setup tayyor bo'lganini ham beramiz (qo'shimcha ma'lumot)
+      for(int i=0;i<SESSION_COUNT;i++)
+      {
+         if(!g_enabled[i]) continue;
+         if((g_mssUpWatch[i] && g_mssUpDone[i][otf]) ||
+            (g_mssDnWatch[i] && g_mssDnDone[i][otf])) { oteReady=true; break; }
+      }
    }
 
    bool news=InNewsWindow2();
